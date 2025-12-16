@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
 import { useEncryption } from '../contexts/EncryptionContext';
+import { blobCache } from '@/lib/secureImageCache';
 
 export default function PreviewModal({ file, isOpen, onClose }) {
   const { masterPassword, isUnlocked, unlock } = useEncryption();
@@ -46,6 +47,13 @@ export default function PreviewModal({ file, isOpen, onClose }) {
             setLoading(true);
             setError(null);
 
+            // 1. Check Cache First
+            if (blobCache.has(file.id)) {
+                setSecureSrc(blobCache.get(file.id).url);
+                setLoading(false);
+                return;
+            }
+
             const res = await fetch('/api/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -59,6 +67,10 @@ export default function PreviewModal({ file, isOpen, onClose }) {
 
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
+
+            // 2. Save to Cache
+            blobCache.set(file.id, { url, timestamp: Date.now() });
+
             setSecureSrc(url);
         } catch (err) {
             setError(err.message);
