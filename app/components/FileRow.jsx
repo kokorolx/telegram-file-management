@@ -4,14 +4,17 @@ import { useState } from 'react';
 import { formatFileSize, getFileExtension } from '@/lib/utils';
 import PreviewModal from './PreviewModal';
 import FileCardThumbnail from './FileCardThumbnail';
+import { useEncryption } from '../contexts/EncryptionContext';
 
 export default function FileRow({ file, onFileDeleted, onContextMenu }) {
+  const { masterKey } = useEncryption();
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [error, setError] = useState(null);
 
   const fileExt = getFileExtension(file.original_filename);
+  // ... date ...
   const uploadDate = new Date(file.uploaded_at).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -25,8 +28,24 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
   const handleDownload = async (e) => {
     e.stopPropagation();
     try {
+      if (file.is_encrypted && !masterKey) {
+          alert("Please unlock with Master Password first");
+          return;
+      }
+
       setDownloading(true);
-      const response = await fetch(`/api/download?file_id=${encodeURIComponent(file.id)}`);
+
+      let response;
+      if (file.is_encrypted) {
+           response = await fetch('/api/download', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ file_id: file.id, master_key: masterKey })
+           });
+      } else {
+           response = await fetch(`/api/download?file_id=${encodeURIComponent(file.id)}`);
+      }
+
       if (!response.ok) throw new Error('Failed to download');
 
       const blob = await response.blob();
@@ -45,6 +64,7 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
       setDownloading(false);
     }
   };
+
 
   const handleDelete = async (e) => {
     e.stopPropagation();

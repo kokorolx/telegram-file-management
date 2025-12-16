@@ -5,6 +5,8 @@ export const metadata = {
   description: 'Store and manage files using Telegram',
 }
 
+import { EncryptionProvider } from './contexts/EncryptionContext';
+
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
@@ -17,7 +19,9 @@ export default function RootLayout({ children }) {
             </div>
           </header>
           <main className="w-full px-4 sm:px-6 lg:px-8 py-8">
-            {children}
+            <EncryptionProvider>
+              {children}
+            </EncryptionProvider>
           </main>
         </div>
       </body>

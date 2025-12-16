@@ -4,21 +4,24 @@ import { useState } from 'react';
 import { formatFileSize, getFileExtension } from '@/lib/utils';
 import PreviewModal from './PreviewModal';
 import FileCardThumbnail from './FileCardThumbnail';
+import { useEncryption } from '../contexts/EncryptionContext';
 
 export default function FileCard({ file, onFileDeleted, onContextMenu }) {
+  const { masterKey, unlock } = useEncryption(); // Assuming unlock might trigger UI in future, or we check isUnlocked
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
 
   const fileExt = getFileExtension(file.original_filename);
+  // ... date logic ...
   const uploadDate = new Date(file.uploaded_at).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
 
-  // Check if file is previewable (image, video, audio)
+  // ... checks ...
   const isImage = file.mime_type?.startsWith('image/');
   const isVideo = file.mime_type?.startsWith('video/');
   const isAudio = file.mime_type?.startsWith('audio/');
@@ -26,12 +29,25 @@ export default function FileCard({ file, onFileDeleted, onContextMenu }) {
 
   const handleDownload = async () => {
     try {
+      if (file.is_encrypted && !masterKey) {
+          // Trigger unlock UI (For now just alert, but ideally context handles this)
+          alert("Please unlock with Master Password first (Top Menu)");
+          return;
+      }
+
       setDownloading(true);
       setError(null);
 
-      const response = await fetch(
-        `/api/download?file_id=${encodeURIComponent(file.id)}`
-      );
+      let response;
+      if (file.is_encrypted) {
+           response = await fetch('/api/download', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ file_id: file.id, master_key: masterKey })
+           });
+      } else {
+           response = await fetch(`/api/download?file_id=${encodeURIComponent(file.id)}`);
+      }
 
       if (!response.ok) {
         throw new Error('Failed to download file');

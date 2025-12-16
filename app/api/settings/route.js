@@ -5,7 +5,7 @@ const SETUP_TOKEN = process.env.SETUP_TOKEN || 'default-setup-token';
 
 export async function POST(request) {
   try {
-    const { botToken, userId, setupToken, useDefault } = await request.json();
+    const { botToken, userId, setupToken, useDefault, masterPassword } = await request.json();
 
     // Validate setup token ONLY if not using default
     // Rationale: If using default, we rely on server env which is already secure access.
@@ -47,8 +47,25 @@ export async function POST(request) {
       );
     }
 
+    if (!masterPassword) {
+         return NextResponse.json(
+            { success: false, error: 'Master Password is required for encryption setup.' },
+            { status: 400 }
+         );
+    }
+
     // Save settings
     await saveSettings(finalBotToken, finalUserId);
+
+    // Save Master Password
+    const { setMasterPassword } = await import('@/lib/authService');
+    const { updateMasterPasswordHash } = await import('@/lib/db');
+
+    // Note: setMasterPassword in authService currently just hashes, it doesn't save to DB itself (based on my read).
+    // Let's verify authService content from previous turn.
+    // Yes, it returns hash.
+    const hash = await setMasterPassword(masterPassword);
+    await updateMasterPasswordHash(hash);
 
     return NextResponse.json({
       success: true,

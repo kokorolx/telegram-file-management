@@ -7,6 +7,9 @@ export default function SetupModal({ onSetupComplete }) {
   const [botToken, setBotToken] = useState('');
   const [userId, setUserId] = useState('');
   const [setupToken, setSetupToken] = useState('');
+  const [masterPassword, setMasterPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [setupComplete, setSetupComplete] = useState(false);
@@ -34,9 +37,17 @@ export default function SetupModal({ onSetupComplete }) {
     setError(null);
 
     try {
-      const payload = { setupToken };
+      const payload = { setupToken, masterPassword };
       if (useDefault) {
           payload.useDefault = true;
+          // Even if default is used, we might verify setupToken slightly differently or skip it?
+          // Current backend logic: "Validate setup token ONLY if not using default"
+          // So if useDefault is true, frontend doesn't Strictly need setupToken, BUT
+          // backend logic says: if (!useDefault && setupToken !== SETUP_TOKEN)
+          // So if useDefault is true, we can send empty setupToken??
+          // Let's keep sending it if user entered it, but if useDefault is checked, maybe user didn't enter it?
+          // The UI says "Setup Token is NOT required in this mode" when Checked.
+          // So we should handle that.
       } else {
           payload.botToken = botToken;
           payload.userId = userId;
@@ -139,9 +150,63 @@ export default function SetupModal({ onSetupComplete }) {
             </p>
           </div>
 
+          <div className="pt-2 border-t border-gray-100 space-y-3">
+             <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Create Master Password <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={masterPassword}
+                    onChange={(e) => setMasterPassword(e.target.value)}
+                    placeholder="Vault Encryption Password"
+                    disabled={loading}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 pr-10"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? "🙈" : "👁️"}
+                  </button>
+                </div>
+             </div>
+
+             <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Confirm Master Password <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter Password"
+                  disabled={loading}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-blue-500 ${
+                    confirmPassword && masterPassword !== confirmPassword
+                      ? 'border-red-300 focus:border-red-500 bg-red-50'
+                      : 'border-gray-300'
+                  }`}
+                  required
+                  minLength={6}
+                />
+                {confirmPassword && masterPassword !== confirmPassword && (
+                  <p className="text-xs text-red-500 mt-1">Passwords do not match</p>
+                )}
+             </div>
+
+             <p className="text-xs text-amber-600">
+               <strong>Important:</strong> Used to encrypt your files. Do not lose this!
+             </p>
+          </div>
+
           <button
             type="submit"
-            disabled={loading || (!useDefault && (!botToken || !userId || !setupToken)) }
+            disabled={loading || !masterPassword || masterPassword !== confirmPassword || (!useDefault && (!botToken || !userId || !setupToken)) }
             className="w-full bg-blue-600 text-white font-medium py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition"
           >
             {loading ? 'Setting up...' : 'Complete Setup'}

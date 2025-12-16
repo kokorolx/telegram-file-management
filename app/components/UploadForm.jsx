@@ -1,12 +1,17 @@
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
 
-export default function UploadForm({ onFileUploaded, currentFolderId, externalFiles }) { // Added externalFiles prop
+import { useEncryption } from '../contexts/EncryptionContext';
+
+export default function UploadForm({ onFileUploaded, currentFolderId, externalFiles }) {
+  const { masterPassword, isUnlocked, unlock } = useEncryption();
   const [queue, setQueue] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [isEncrypted, setIsEncrypted] = useState(false);
-  const [masterPassword, setMasterPassword] = useState('');
+  const [isEncrypted, setIsEncrypted] = useState(true); // Default to true
+  // Local state for password input if vault is locked
+  const [inputPassword, setInputPassword] = useState('');
   const fileInputRef = useRef(null);
 
   // Handle external files (e.g. from global DropZone)
@@ -34,11 +39,17 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
       const pendingFile = queue.find(f => f.status === 'pending');
       if (!pendingFile) return;
 
-      // Check password if encrypted
-      if (isEncrypted && !masterPassword) {
-         updateFileStatus(pendingFile.id, 'error', 0, 'Master password required');
-         return; // Stop processing or wait? For now error out this item.
-         // Actually we should pause queue? But simple error is easier.
+      if (isEncrypted && !isUnlocked && !inputPassword) {
+         updateFileStatus(pendingFile.id, 'error', 0, 'Unlock vault required');
+         return;
+      }
+
+      // If valid password provided but not unlocked yet, unlock it now (optimistic)
+      let activePassword = masterPassword;
+      if (isEncrypted && !isUnlocked && inputPassword) {
+          activePassword = inputPassword;
+          // We could verify it first, but for now we assume it's correct and let upload verify
+          unlock(inputPassword);
       }
 
       // Update status to uploading
@@ -48,7 +59,7 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
         const formData = new FormData();
         formData.append('file', pendingFile.file);
         if (currentFolderId) formData.append('folder_id', currentFolderId);
-        if (isEncrypted) formData.append('master_password', masterPassword);
+        if (isEncrypted) formData.append('master_password', activePassword);
 
         // Simulate progress (since fetch doesn't support generic progress events easily)
         const progressInterval = setInterval(() => {
@@ -84,7 +95,7 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
     if (queue.some(f => f.status === 'pending') && !queue.some(f => f.status === 'uploading')) {
        processQueue();
     }
-  }, [queue, currentFolderId, onFileUploaded]);
+  }, [queue, currentFolderId, onFileUploaded, isEncrypted, isUnlocked, inputPassword, masterPassword, unlock]);
 
   const updateFileStatus = (id, status, progress, error = null) => {
     setQueue(prev => prev.map(f => {
@@ -168,48 +179,34 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
         </div>
       </div>
 
-      {/* Encryption Options */}
+      {/* Master Password Input Removed (Server-side key handled) */}
+      {/* Security Info / Unlock Prompt */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-        <div className="flex items-center gap-2 mb-2">
-            <input
-                type="checkbox"
-                id="encrypt-files"
-                checked={isEncrypted}
-                onChange={(e) => setIsEncrypted(e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-            />
-            <label htmlFor="encrypt-files" className="text-sm font-medium text-gray-700 select-none">
-                Encrypt files with Master Password
-            </label>
-        </div>
-
-        {isEncrypted && (
-            <div className="animate-fade-in pl-6">
-                <input
-                    type="password"
-                    placeholder="Enter Master Password"
-                    value={masterPassword}
-                    onChange={(e) => setMasterPassword(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-
-                <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md flex items-start gap-2">
-                    <span className="text-lg">⚠️</span>
-                    <div className="text-xs text-yellow-800">
-                        <p className="font-bold mb-0.5">Critical Notice:</p>
-                        <p>
-                           1. <strong>Do not lose this password.</strong> Files cannot be recovered without it.
-                        </p>
-                        <p className="mt-1">
-                           2. Entering the wrong password will cause the upload to fail.
-                        </p>
-                        <p className="mt-1">
-                           3. Files will be split into <strong>10MB chunks</strong> and encrypted securely.
-                        </p>
+         {isEncrypted ? (
+             isUnlocked ? (
+                 <div className="flex items-center text-green-600 text-sm font-medium">
+                     <span className="mr-2">🔓</span> Vault Unlocked (Session Active)
+                 </div>
+             ) : (
+                <div className="animate-fade-in">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Unlock Vault to Upload
+                    </label>
+                    <input
+                        type="password"
+                        placeholder="Enter Master Password"
+                        value={inputPassword}
+                        onChange={(e) => setInputPassword(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                     <div className="flex items-center text-blue-600 text-xs mt-1">
+                        <span className="mr-1">🔒</span> Files will be encrypted with this password.
                     </div>
                 </div>
-            </div>
-        )}
+             )
+         ) : (
+             <p className="text-gray-500 text-sm">Standard unencrypted upload.</p>
+         )}
       </div>
 
       {/* Queue List */}
