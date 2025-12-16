@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect } from 'react';
+import { clearSecureCache } from '@/lib/secureImageCache'; // Use absolute path alias if possible, or relative
 
 const EncryptionContext = createContext();
 
@@ -29,6 +30,7 @@ export function EncryptionProvider({ children }) {
   const lock = () => {
     setMasterPassword(null);
     setIsUnlocked(false);
+    clearSecureCache();
   };
 
   return (
