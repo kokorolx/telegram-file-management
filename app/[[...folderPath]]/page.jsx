@@ -1,92 +1,172 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import FileList from './components/FileList';
-import UploadForm from './components/UploadForm';
-import SetupModal from './components/SetupModal';
-import FolderNav from './components/FolderNav';
-import Breadcrumb from './components/Breadcrumb';
-import CreateFolderDialog from './components/CreateFolderDialog';
-import DropZone from './components/DropZone';
-import SettingsDialog from './components/SettingsDialog';
-import LoginDialog from './components/LoginDialog';
+import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import FileList from '../components/FileList';
+import UploadForm from '../components/UploadForm';
+import SetupModal from '../components/SetupModal';
+import FolderNav from '../components/FolderNav';
+import Breadcrumb from '../components/Breadcrumb';
+import CreateFolderDialog from '../components/CreateFolderDialog';
+import DropZone from '../components/DropZone';
+import SettingsDialog from '../components/SettingsDialog';
+import LoginDialog from '../components/LoginDialog';
+import ContextMenu from '../components/ContextMenu';
+import Link from 'next/link';
 
-export default function Home() {
+export default function Home({ params }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Resolve current path from params (Next.js 13+ app dir)
+  // params.folderPath is array: ['folder', 'sub']
+  // If undefined, we are at root.
+  const folderPathSegments = params.folderPath || [];
+  const currentPath = folderPathSegments.length > 0 ? '/' + folderPathSegments.join('/') : '/';
+
+  // Local State
   const [files, setFiles] = useState([]);
   const [folders, setFolders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // Initial load
+  const [loadingMore, setLoadingMore] = useState(false); // Infinite scroll load
   const [error, setError] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Derived state from API
   const [currentFolderId, setCurrentFolderId] = useState(null);
   const [currentFolderInfo, setCurrentFolderInfo] = useState(null);
+
+  // UI State
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState([]);
   const [contextMenu, setContextMenu] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
 
+  // Reset state when path changes (Navigation)
+  useEffect(() => {
+     // We do NOT clear files/folders immediately to enable "soft loading" (dimmed old content)
+     // setFiles([]);
+     // setFolders([]);
+     setPage(1);
+     setHasMore(true);
+     setLoading(true);
+     setSearchTerm('');
+  }, [currentPath]);
+
   // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchTerm);
-      setCurrentPage(1); // Reset to page 1 on new search
+      if (searchTerm !== debouncedSearch) {
+          setPage(1);
+          setFiles([]); // Clear on new search
+          setHasMore(true);
+          setLoading(true);
+      }
     }, 300);
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  useEffect(() => {
-    fetchFiles();
-  }, [currentPage, debouncedSearch, currentFolderId, refreshTrigger]);
-
-  async function fetchFiles() {
+  const fetchFiles = useCallback(async (isLoadMore = false) => {
     try {
-      setLoading(true);
+      if (isLoadMore) {
+          setLoadingMore(true);
+      } else {
+          // If not loading more, we rely on `loading` state or initial state.
+      }
+
       setError(null);
 
       const params = new URLSearchParams();
-      params.set('page', currentPage);
-      params.set('limit', 20);
+      params.set('page', isLoadMore ? page : 1);
+      params.set('limit', 20); // Fetch 20 at a time
       if (debouncedSearch) params.set('search', debouncedSearch);
-      if (currentFolderId) params.set('folder_id', currentFolderId);
+      params.set('path', currentPath);
 
       const response = await fetch(`/api/files?${params}`);
 
-      // Handle Authentication Error
       if (response.status === 401) {
           setShowLogin(true);
           setLoading(false);
+          setLoadingMore(false);
           return;
       }
 
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 404) throw new Error('Folder not found');
         throw new Error(data.error || 'Failed to fetch files');
       }
 
-      setFiles(data.data || []);
-      setTotalPages(data.pagination?.totalPages || 1);
+      setFiles(prev => {
+          if (isLoadMore) {
+              const newFiles = data.data || [];
+              const existingIds = new Set(prev.map(f => f.id));
+              const filteredNew = newFiles.filter(f => !existingIds.has(f.id));
+              return [...prev, ...filteredNew];
+          } else {
+              return data.data || [];
+          }
+      });
 
-      // Fetch subfolders for current folder
-      await fetchFolders();
-
-      // If in a folder, fetch folder info for breadcrumb
-      if (currentFolderId) {
-        await fetchFolderInfo(currentFolderId);
-      } else {
-        setCurrentFolderInfo(null);
+      setHasMore(data.pagination?.hasMore || false);
+      if (isLoadMore && data.pagination?.hasMore) {
+          setPage(prev => prev + 1);
+      } else if (!isLoadMore && data.pagination?.hasMore) {
+           // Reset page to 2 for next load more if we just fetched page 1
+           setPage(2);
       }
+
+      if (data.metadata?.currentFolder) {
+          setCurrentFolderId(data.metadata.currentFolder.id);
+          setCurrentFolderInfo(data.metadata.currentFolder);
+      } else {
+          setCurrentFolderId(null);
+          setCurrentFolderInfo(null);
+      }
+
     } catch (err) {
       setError(err.message);
       console.error('Error fetching files:', err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  }
+  }, [debouncedSearch, currentPath, page]);
+
+  // Initial Fetch & Refresh
+  useEffect(() => {
+    fetchFiles(false);
+  }, [refreshTrigger, currentPath, debouncedSearch]);
+
+  // Intersection Observer for Infinite Scroll
+  const observerTarget = useCallback(node => {
+      if (loading || loadingMore) return;
+      if (!hasMore) return;
+
+      const observer = new IntersectionObserver(entries => {
+        if (entries[0].isIntersecting) {
+           fetchFiles(true);
+        }
+      });
+
+      if (node) observer.observe(node);
+      return () => {
+          if (node) observer.unobserve(node);
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, loadingMore, hasMore, fetchFiles]);
+
+  // Fetch subfolders whenever currentFolderId or refreshTrigger changes
+  useEffect(() => {
+      fetchFolders();
+  }, [currentFolderId, refreshTrigger]);
 
   async function fetchFolders() {
     try {
@@ -95,7 +175,7 @@ export default function Home() {
 
       const response = await fetch(`/api/folders?${params}`);
 
-      if (response.status === 401) return; // Handled by fetchFiles usually
+      if (response.status === 401) return;
 
       const data = await response.json();
 
@@ -107,20 +187,11 @@ export default function Home() {
     }
   }
 
-  async function fetchFolderInfo(folderId) {
-    try {
-      const response = await fetch(`/api/folders/${folderId}`);
-      if (response.status === 401) return;
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setCurrentFolderInfo(data.data);
-      }
-    } catch (err) {
-      console.error('Error fetching folder info:', err);
-    }
-  }
+  // Navigation Helper
+  const navigateToPath = (path) => {
+      setSearchTerm('');
+      router.push(path || '/');
+  };
 
   const handleFileUploaded = () => {
     setRefreshTrigger(prev => prev + 1);
@@ -131,12 +202,12 @@ export default function Home() {
   };
 
   const handleSetupComplete = () => {
-    fetchFiles();
+    setRefreshTrigger(prev => prev + 1);
   };
 
   const handleLoginSuccess = () => {
       setShowLogin(false);
-      fetchFiles();
+      setRefreshTrigger(prev => prev + 1);
   };
 
   const handleContextMenu = (e, item, type) => {
@@ -148,9 +219,9 @@ export default function Home() {
         label: 'Open',
         icon: '📂',
         onClick: () => {
-          setCurrentFolderId(item.id);
-          setCurrentPage(1);
-          setSearchTerm('');
+            const slug = item.slug || item.name.toLowerCase().replace(/\s/g, '-');
+            const newPath = (currentPath === '/' ? '' : currentPath) + '/' + slug;
+            navigateToPath(newPath);
         }
       });
       menuItems.push({ type: 'divider' });
@@ -167,14 +238,6 @@ export default function Home() {
         }
       });
     } else if (type === 'file') {
-      const isPreviewable = item.mime_type?.startsWith('image/') ||
-                            item.mime_type?.startsWith('video/') ||
-                            item.mime_type?.startsWith('audio/');
-
-      /* Note: Preview trigger is handled inside components usually,
-         but we could implement a global preview state if needed.
-         For now skipping Preview in context menu or just downloading. */
-
       menuItems.push({
         label: 'Download',
         icon: '⬇️',
@@ -228,8 +291,6 @@ export default function Home() {
         if (!response.ok) {
             throw new Error('Failed to move item');
         }
-
-        // Refresh list
         setRefreshTrigger(prev => prev + 1);
     } catch (err) {
         console.error('Move error:', err);
@@ -252,7 +313,6 @@ export default function Home() {
         isOpen={showCreateFolder}
         onClose={() => setShowCreateFolder(false)}
         onCreated={() => {
-          fetchFolders();
           setRefreshTrigger(prev => prev + 1);
         }}
         parentId={currentFolderId}
@@ -266,16 +326,26 @@ export default function Home() {
           onClose={() => setContextMenu(null)}
         />
       )}
+      {/* Header */}
+      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-sm border-b border-slate-200/50">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🔒</span>
+            <h1 className="text-lg font-bold text-slate-900">Telegram Files Manager</h1>
+          </div>
+          <Link href="/landing" className="text-sm font-medium text-slate-600 hover:text-blue-600 transition">
+            Learn More
+          </Link>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 container-custom mx-auto py-6">
         {/* Folder Navigation Sidebar */}
         <aside className="xl:col-span-1">
           <FolderNav
             currentFolderId={currentFolderId}
-            onFolderSelect={(folderId) => {
-              setCurrentFolderId(folderId);
-              setCurrentPage(1);
-              setSearchTerm('');
-            }}
+            onFolderSelect={(path) => navigateToPath(path)}
+            refreshTrigger={refreshTrigger}
           />
         </aside>
 
@@ -285,13 +355,10 @@ export default function Home() {
           <div className="flex items-center gap-4">
              <div className="flex-1">
                 <Breadcrumb
+                    currentPath={currentPath}
                     currentFolderId={currentFolderId}
                     currentFolderInfo={currentFolderInfo}
-                    onNavigate={(folderId) => {
-                      setCurrentFolderId(folderId);
-                      setCurrentPage(1);
-                      setSearchTerm('');
-                    }}
+                    onNavigate={(path) => navigateToPath(path)}
                 />
              </div>
              <button
@@ -357,7 +424,7 @@ export default function Home() {
             {loading ? (
               <div className="flex flex-col items-center justify-center py-12 text-gray-500">
                 <p className="text-3xl mb-2">⏳</p>
-                <p className="font-medium">Loading files and folders...</p>
+                <p className="font-medium">Loading files...</p>
               </div>
             ) : folders.length === 0 && files.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-gray-500">
@@ -371,45 +438,29 @@ export default function Home() {
               </div>
             ) : (
               <>
-                <FileList
-                  folders={folders}
-                  files={files}
-                  onFileDeleted={handleFileDeleted}
-                  onFolderDoubleClick={(folderId) => {
-                    setCurrentFolderId(folderId);
-                    setCurrentPage(1);
-                    setSearchTerm('');
-                  }}
-                  onFolderCreated={handleFileUploaded}
-                  onItemContextMenu={handleContextMenu}
-                />
+                <div className={`transition-opacity duration-200 ${loading ? 'opacity-50' : 'opacity-100'}`}>
+                    <FileList
+                      folders={folders}
+                      files={files}
+                      onFileDeleted={handleFileDeleted}
+                      onFolderDoubleClick={(folderId) => {
+                          const clickedFolder = folders.find(f => f.id === folderId);
+                          if (clickedFolder) {
+                              const slug = clickedFolder.slug || clickedFolder.name.toLowerCase().replace(/\s/g, '-');
+                              const newPath = (currentPath === '/' ? '' : currentPath) + '/' + slug;
+                              navigateToPath(newPath);
+                          }
+                      }}
+                      onFolderCreated={handleFileUploaded}
+                      onItemContextMenu={handleContextMenu}
+                    />
+                </div>
 
-                {files.length > 0 && (
-                  <>
-                    {/* Pagination */}
-                    <div className="mt-8 pt-6 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-                      <div className="text-sm text-gray-600 font-medium">
-                        Page <span className="font-semibold text-gray-900">{currentPage}</span> of{' '}
-                        <span className="font-semibold text-gray-900">{totalPages}</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                          disabled={currentPage === 1 || loading}
-                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400 transition-colors font-medium text-sm flex items-center gap-1"
-                        >
-                          ← Previous
-                        </button>
-                        <button
-                          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                          disabled={currentPage === totalPages || loading}
-                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400 transition-colors font-medium text-sm flex items-center gap-1"
-                        >
-                          Next →
-                        </button>
-                      </div>
+                {/* Loader Sentinel */}
+                {hasMore && (
+                    <div ref={observerTarget} className="py-4 flex justify-center text-gray-400 text-sm">
+                        {loadingMore ? 'Loading more files...' : 'Scroll to load more'}
                     </div>
-                  </>
                 )}
               </>
             )}

@@ -27,16 +27,16 @@ export default function Breadcrumb({ currentFolderId, currentFolderInfo, onNavig
         const data = await response.json();
         const folder = data.data;
 
-        crumbs.unshift({ id: folder.id, name: folder.name });
+        crumbs.unshift({ id: folder.id, name: folder.name, slug: folder.slug });
         folderId = folder.parent_id; // Move to parent
       }
 
       // Add root at the beginning
-      crumbs.unshift({ id: null, name: 'My Files' });
+      crumbs.unshift({ id: null, name: 'My Files', slug: '' });
       setBreadcrumbs(crumbs);
     } catch (err) {
       console.error('Error building breadcrumbs:', err);
-      setBreadcrumbs([{ id: null, name: 'My Files' }]);
+      setBreadcrumbs([{ id: null, name: 'My Files', slug: '' }]);
     }
   }
 
@@ -46,23 +46,31 @@ export default function Breadcrumb({ currentFolderId, currentFolderInfo, onNavig
 
   return (
     <nav className="flex items-center gap-1 text-sm bg-white rounded-lg p-3 border border-gray-200 shadow-sm">
-      {breadcrumbs.map((crumb, index) => (
-        <div key={crumb.id || 'root'} className="flex items-center gap-1">
-          <button
-            onClick={() => onNavigate(crumb.id)}
-            className={`px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
-              index === breadcrumbs.length - 1
-                ? 'text-gray-900 bg-gray-100 cursor-default'
-                : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
-            }`}
-          >
-            {crumb.name}
-          </button>
-          {index < breadcrumbs.length - 1 && (
-            <span className="text-gray-400 px-1">/</span>
-          )}
-        </div>
-      ))}
+      {breadcrumbs.map((crumb, index) => {
+        // Construct path for this crumb
+        // Root is special.
+        // Path is join of slugs from index 1 to current index
+        const pathSegments = breadcrumbs.slice(1, index + 1).map(c => c.slug);
+        const path = pathSegments.length > 0 ? '/' + pathSegments.join('/') : '/';
+
+        return (
+            <div key={crumb.id || 'root'} className="flex items-center gap-1">
+              <button
+                onClick={() => onNavigate(path)}
+                className={`px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
+                  index === breadcrumbs.length - 1
+                    ? 'text-gray-900 bg-gray-100 cursor-default'
+                    : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
+                }`}
+              >
+                {crumb.name}
+              </button>
+              {index < breadcrumbs.length - 1 && (
+                <span className="text-gray-400 px-1">/</span>
+              )}
+            </div>
+        );
+      })}
     </nav>
   );
 }

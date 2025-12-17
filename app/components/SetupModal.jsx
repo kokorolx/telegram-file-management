@@ -77,7 +77,7 @@ export default function SetupModal({ onSetupComplete }) {
     }
   }
 
-  if (!showModal && setupComplete) {
+  if (!showModal) {
     return null;
   }
 

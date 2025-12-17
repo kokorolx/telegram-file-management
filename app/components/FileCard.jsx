@@ -5,9 +5,10 @@ import { formatFileSize, getFileExtension } from '@/lib/utils';
 import PreviewModal from './PreviewModal';
 import FileCardThumbnail from './FileCardThumbnail';
 import { useEncryption } from '../contexts/EncryptionContext';
+import { blobCache } from '@/lib/secureImageCache'; // Add import
 
 export default function FileCard({ file, onFileDeleted, onContextMenu }) {
-  const { masterKey, unlock } = useEncryption(); // Assuming unlock might trigger UI in future, or we check isUnlocked
+  const { masterPassword, unlock } = useEncryption(); // Assuming unlock might trigger UI in future, or we check isUnlocked
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState(null);
@@ -29,9 +30,21 @@ export default function FileCard({ file, onFileDeleted, onContextMenu }) {
 
   const handleDownload = async () => {
     try {
-      if (file.is_encrypted && !masterKey) {
-          // Trigger unlock UI (For now just alert, but ideally context handles this)
+      if (file.is_encrypted && !masterPassword) {
+          // Should be hidden by UI, but double check
           alert("Please unlock with Master Password first (Top Menu)");
+          return;
+      }
+
+      // Check Cache
+      if (file.is_encrypted && blobCache.has(file.id)) {
+          const { url } = blobCache.get(file.id);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = file.original_filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
           return;
       }
 
@@ -43,7 +56,7 @@ export default function FileCard({ file, onFileDeleted, onContextMenu }) {
            response = await fetch('/api/download', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ file_id: file.id, master_key: masterKey })
+              body: JSON.stringify({ file_id: file.id, master_password: masterPassword })
            });
       } else {
            response = await fetch(`/api/download?file_id=${encodeURIComponent(file.id)}`);
@@ -56,12 +69,18 @@ export default function FileCard({ file, onFileDeleted, onContextMenu }) {
       // Create a blob and download
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
+
+      // Cache if encrypted
+      if (file.is_encrypted) {
+           blobCache.set(file.id, { url, timestamp: Date.now() });
+      }
+
       const a = document.createElement('a');
       a.href = url;
       a.download = file.original_filename;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
+      if (!file.is_encrypted) window.URL.revokeObjectURL(url); // Don't revoke encrypted as we cached it
       document.body.removeChild(a);
     } catch (err) {
       setError(err.message);
@@ -145,6 +164,7 @@ export default function FileCard({ file, onFileDeleted, onContextMenu }) {
               </svg>
             </button>
           )}
+          {(!file.is_encrypted || masterPassword) && (
           <button
             onClick={handleDownload}
             className="bg-white text-gray-800 p-2 rounded-full shadow-lg hover:bg-green-50 hover:text-green-600 transition-all transform hover:scale-110"
@@ -154,6 +174,7 @@ export default function FileCard({ file, onFileDeleted, onContextMenu }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
           </button>
+          )}
           <button
             onClick={handleDelete}
             className="bg-white text-gray-800 p-2 rounded-full shadow-lg hover:bg-red-50 hover:text-red-600 transition-all transform hover:scale-110"

@@ -5,9 +5,10 @@ import { formatFileSize, getFileExtension } from '@/lib/utils';
 import PreviewModal from './PreviewModal';
 import FileCardThumbnail from './FileCardThumbnail';
 import { useEncryption } from '../contexts/EncryptionContext';
+import { blobCache } from '@/lib/secureImageCache'; // Add import
 
 export default function FileRow({ file, onFileDeleted, onContextMenu }) {
-  const { masterKey } = useEncryption();
+  const { masterPassword } = useEncryption();
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -28,8 +29,20 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
   const handleDownload = async (e) => {
     e.stopPropagation();
     try {
-      if (file.is_encrypted && !masterKey) {
+      if (file.is_encrypted && !masterPassword) {
           alert("Please unlock with Master Password first");
+          return;
+      }
+
+      // Check Cache
+      if (file.is_encrypted && blobCache.has(file.id)) {
+          const { url } = blobCache.get(file.id);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = file.original_filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
           return;
       }
 
@@ -40,7 +53,7 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
            response = await fetch('/api/download', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ file_id: file.id, master_key: masterKey })
+              body: JSON.stringify({ file_id: file.id, master_password: masterPassword })
            });
       } else {
            response = await fetch(`/api/download?file_id=${encodeURIComponent(file.id)}`);
@@ -50,12 +63,18 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
+
+      // Cache if encrypted
+      if (file.is_encrypted) {
+           blobCache.set(file.id, { url, timestamp: Date.now() });
+      }
+
       const a = document.createElement('a');
       a.href = url;
       a.download = file.original_filename;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
+      if (!file.is_encrypted) window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err) {
       console.error('Download error:', err);
@@ -137,6 +156,7 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
 
         {/* Actions */}
         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          {(!file.is_encrypted || masterPassword) && (
           <button
             onClick={handleDownload}
             disabled={downloading}
@@ -147,6 +167,7 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
           </button>
+          )}
           <button
             onClick={handleDelete}
             disabled={deleting}

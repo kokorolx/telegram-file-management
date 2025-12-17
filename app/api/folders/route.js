@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import { createFolder, getFolders, getFoldersByParent } from '@/lib/db';
+import { createFolder, getFolders, getFoldersByParent, getAllFolders } from '@/lib/db';
 
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const parentId = searchParams.get('parent_id');
+    const all = searchParams.get('all');
 
     let folders;
-    if (parentId) {
+    if (all === 'true') {
+      folders = await getAllFolders();
+    } else if (parentId) {
       // Get subfolders for specific parent
       folders = await getFoldersByParent(parentId);
     } else {

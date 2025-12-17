@@ -2,6 +2,7 @@ import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
 import { useEncryption } from '../contexts/EncryptionContext';
 import { blobCache } from '@/lib/secureImageCache';
+import VideoPlayer from './VideoPlayer';
 
 export default function PreviewModal({ file, isOpen, onClose }) {
   const { masterPassword, isUnlocked, unlock } = useEncryption();
@@ -47,6 +48,43 @@ export default function PreviewModal({ file, isOpen, onClose }) {
             setLoading(true);
             setError(null);
 
+            // For video: Use VideoPlayer component for progressive streaming
+            // VideoPlayer handles its own fetching and decryption
+            if (file?.mime_type?.startsWith('video/')) {
+                setSecureSrc('use-video-player'); // Signal to use VideoPlayer
+                setLoading(false);
+                return;
+            }
+
+            // For audio: Use blob-based loading
+            if (file?.mime_type?.startsWith('audio/')) {
+                const streamUrl = `/api/stream?file_id=${file.id}`;
+                const xhr = new XMLHttpRequest();
+                xhr.open('GET', streamUrl);
+                xhr.setRequestHeader('Authorization', `Bearer ${password}`);
+                xhr.responseType = 'blob';
+
+                xhr.onload = () => {
+                    if (xhr.status === 200) {
+                        const blobUrl = URL.createObjectURL(xhr.response);
+                        setSecureSrc(blobUrl);
+                        setLoading(false);
+                    } else {
+                        setError('Failed to load audio');
+                        setLoading(false);
+                    }
+                };
+
+                xhr.onerror = () => {
+                    setError('Failed to load audio');
+                    setLoading(false);
+                };
+
+                xhr.send();
+                return;
+            }
+
+            // For other file types: Load into memory (images, documents, etc.)
             // 1. Check Cache First
             if (blobCache.has(file.id)) {
                 setSecureSrc(blobCache.get(file.id).url);
@@ -165,15 +203,13 @@ export default function PreviewModal({ file, isOpen, onClose }) {
                 )}
 
                 {isVideo && (
-                    <div className="flex justify-center">
-                    <video
-                        src={secureSrc}
-                        controls
-                        autoPlay
-                        className="max-w-full max-h-[70vh] rounded shadow-sm"
-                    >
-                        Your browser does not support the video tag.
-                    </video>
+                    <div className="flex justify-center w-full">
+                        <VideoPlayer
+                            fileId={file.id}
+                            fileName={file.original_filename}
+                            fileSize={file.file_size}
+                            mimeType={file.mime_type}
+                        />
                     </div>
                 )}
 
