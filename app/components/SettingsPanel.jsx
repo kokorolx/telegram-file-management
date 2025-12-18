@@ -14,7 +14,9 @@ export default function SettingsPanel({ isOpen, onClose }) {
       <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-white">Vault Settings</h2>
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <span>⚙️</span> Vault Settings
+          </h2>
           <button
             onClick={onClose}
             className="text-white/70 hover:text-white transition-colors"

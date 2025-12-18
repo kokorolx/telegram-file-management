@@ -1,12 +1,10 @@
-'use client';
-
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 
 import { useEncryption } from '../contexts/EncryptionContext';
 import PasswordPromptModal from './PasswordPromptModal';
 import { encryptFileChunks } from '@/lib/browserUploadEncryption';
 
-export default function UploadForm({ onFileUploaded, currentFolderId, externalFiles }) {
+const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles, hideDropZone = false }, ref) => {
   const { masterPassword, isUnlocked, unlock } = useEncryption();
   const [queue, setQueue] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -18,6 +16,13 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
   const fileInputRef = useRef(null);
   const abortControllersRef = useRef(new Map()); // Track abort controllers per file
   const MAX_CONCURRENT_FILES = 3;
+
+  // Expose file input to parent
+  useImperativeHandle(ref, () => ({
+    openFilePicker: () => {
+      fileInputRef.current?.click();
+    }
+  }));
 
   // Handle external files (e.g. from global DropZone)
   useEffect(() => {
@@ -93,7 +98,7 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
   };
 
   const uploadFile = async (fileItem, password) => {
-     const startTime = Date.now();
+     // const startTime = Date.now();
      console.log(`[UPLOAD] ${fileItem.id} - Starting upload: ${fileItem.file.name}`);
      console.log(`[UPLOAD] ${fileItem.id} - Password provided: ${password ? 'YES' : 'NO'}`);
      console.log(`[UPLOAD] ${fileItem.id} - isEncrypted: ${isEncrypted}`);
@@ -229,55 +234,58 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
   return (
     <>
       <div className="space-y-4">
-        <div
-          id="drop-zone"
-          onDragEnter={handleDragEnter}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer relative overflow-hidden ${
-            isDragging
-              ? 'border-blue-500 bg-blue-50 scale-[1.01]'
-              : 'border-gray-200 hover:border-blue-400 hover:bg-gray-50'
-          }`}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <input
+        {/* Hidden File Input for programmatic use */}
+        <input
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
             multiple
             className="hidden"
-          />
+        />
 
-          <div className="space-y-2 pointer-events-none">
-            <div className={`text-4xl transition-transform duration-300 ${isDragging ? 'scale-125 bounce' : ''}`}>
-              {isDragging ? '📂' : '📤'}
-            </div>
-            <p className="font-medium text-gray-700">
-              {isDragging ? 'Drop files here' : 'Click or Drag files to upload'}
-            </p>
-            <p className="text-sm text-gray-500">
-              {isEncrypted ? 'Files encrypted in browser - server never sees plaintext' : 'Supports multiple files (Max 100MB each)'}
-            </p>
-          </div>
-        </div>
+        {!hideDropZone && (
+            <>
+                <div
+                id="drop-zone"
+                onDragEnter={handleDragEnter}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer relative overflow-hidden ${
+                    isDragging
+                    ? 'border-blue-500 bg-blue-50 scale-[1.01]'
+                    : 'border-gray-200 hover:border-blue-400 hover:bg-gray-50'
+                }`}
+                onClick={() => fileInputRef.current?.click()}
+                >
+                <div className="space-y-2 pointer-events-none">
+                    <div className={`text-4xl transition-transform duration-300 ${isDragging ? 'scale-125 bounce' : ''}`}>
+                    {isDragging ? '📂' : '📤'}
+                    </div>
+                    <p className="font-medium text-gray-700">
+                    {isDragging ? 'Drop files here' : 'Click or Drag files to upload'}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                    {isEncrypted ? 'Files encrypted in browser - server never sees plaintext' : 'Supports multiple files (Max 100MB each)'}
+                    </p>
+                </div>
+                </div>
 
-        {/* Security Info */}
-        <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 transition-all duration-300">
-          <div className="flex items-start gap-3">
-            <span className="text-xl mt-0.5">🔐</span>
-            <div>
-               <p className="text-blue-900 text-sm font-bold">End-to-End Encrypted</p>
-               <p className="text-blue-700/80 text-xs leading-relaxed mt-0.5">
-                 Files are encrypted on your device using AES-256-GCM before they are uploaded.
-                 The server never sees your master password or the plaintext of your files.
-               </p>
-            </div>
-          </div>
-        </div>
-
-
+                {/* Security Info */}
+                <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 transition-all duration-300">
+                <div className="flex items-start gap-3">
+                    <span className="text-xl mt-0.5">🔐</span>
+                    <div>
+                    <p className="text-blue-900 text-sm font-bold">End-to-End Encrypted</p>
+                    <p className="text-blue-700/80 text-xs leading-relaxed mt-0.5">
+                        Files are encrypted on your device using AES-256-GCM before they are uploaded.
+                        The server never sees your master password or the plaintext of your files.
+                    </p>
+                    </div>
+                </div>
+                </div>
+            </>
+        )}
 
         {/* Queue List */}
         {queue.length > 0 && (
@@ -370,4 +378,8 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
       />
     </>
   );
-}
+});
+
+UploadForm.displayName = 'UploadForm';
+
+export default UploadForm;

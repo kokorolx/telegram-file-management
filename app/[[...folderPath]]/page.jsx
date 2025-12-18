@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import FileList from '../components/FileList';
 import UploadForm from '../components/UploadForm';
@@ -23,6 +23,7 @@ export default function Home({ params }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, logout, checkAuth } = useUser();
+  const uploadFormRef = useRef(null);
 
   // Resolve current path from params (Next.js 13+ app dir)
   // params.folderPath is array: ['folder', 'sub']
@@ -490,42 +491,96 @@ export default function Home({ params }) {
           }
         }}
       />
-      {/* Header */}
-      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-sm border-b border-slate-200/50 transition-colors duration-300">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🔒</span>
-            <h1 className="text-lg font-bold text-slate-900">Telegram Files Manager</h1>
-          </div>
-          <div className="flex items-center gap-4">
+      {/* Unified Header */}
+      <header className="sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-white/20 shadow-sm">
+        <div className="w-full px-4 xl:px-8 py-3 flex items-center justify-between gap-6">
+          {/* Logo & Branding */}
+          <Link href="/" className="flex items-center gap-3 group flex-shrink-0">
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform">
+              <span className="text-xl">🔒</span>
+            </div>
+            <div className="hidden sm:block">
+              <h1 className="text-base font-bold text-slate-900 leading-none">Telegram</h1>
+              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Vault Manager</span>
+            </div>
+          </Link>
+
+          {/* Breadcrumbs - Only show when logged in and not at root/landing if possible, or just always show when logged in */}
+          {user && (
+            <div className="flex-1 min-w-0 hidden md:block">
+                <Breadcrumb
+                    currentPath={currentPath}
+                    currentFolderId={currentFolderId}
+                    currentFolderInfo={currentFolderInfo}
+                    onNavigate={(path) => navigateToPath(path)}
+                />
+            </div>
+          )}
+
+          {/* Actions & Profile */}
+          <div className="flex items-center gap-3 flex-shrink-0">
             {user ? (
               <>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-slate-600">👤 {user.username}</span>
+                {/* Google Drive style 'New' button group */}
+                <div className="flex bg-blue-600 rounded-xl shadow-lg shadow-blue-500/20 overflow-hidden">
+                    <button
+                        onClick={() => uploadFormRef.current?.openFilePicker()}
+                        className="px-4 py-2 text-white hover:bg-blue-700 font-bold text-sm flex items-center gap-2 transition-colors border-r border-blue-500/50"
+                        title="Upload Files"
+                    >
+                        <span>📤</span> <span className="hidden sm:inline">Upload</span>
+                    </button>
+                    <button
+                        onClick={() => setShowCreateFolder(true)}
+                        className="px-4 py-2 text-white hover:bg-blue-700 font-bold text-sm flex items-center gap-2 transition-colors"
+                        title="New Folder"
+                    >
+                        <span>+</span> <span className="hidden sm:inline">Folder</span>
+                    </button>
                 </div>
+
+                <div className="w-[1px] h-6 bg-slate-200 mx-1"></div>
+
                 <button
-                  onClick={handleLogout}
-                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                    onClick={() => setShowSettings(true)}
+                    title="Storage & Settings"
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-white text-slate-600 hover:text-blue-600 transition-all border border-slate-200"
                 >
-                  Logout
+                    <span className="text-lg leading-none">⚙️</span>
                 </button>
+
+                <div className="w-[1px] h-6 bg-slate-200 mx-1"></div>
+
+                <div className="flex items-center gap-3">
+                  <div className="hidden lg:flex flex-col items-end">
+                    <span className="text-xs font-bold text-slate-900">{user.username}</span>
+                    <span className="text-[10px] text-green-600 font-medium flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                      Active
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    title="Logout"
+                    className="p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                  </button>
+                </div>
               </>
             ) : (
-              <>
-                <button
-                  onClick={() => setShowLogin(true)}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                >
-                  Login
-                </button>
-              </>
+              <button
+                onClick={() => setShowLogin(true)}
+                className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold text-sm shadow-lg shadow-blue-500/20 transition-all"
+              >
+                Login
+              </button>
             )}
-            <Link href="/landing" className="text-sm font-medium text-slate-600 hover:text-blue-600 transition">
-              Learn More
-            </Link>
           </div>
         </div>
-      </div>
+      </header>
 
       {!user ? (
         <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-6 animate-fade-in">
@@ -553,9 +608,9 @@ export default function Home({ params }) {
           </div>
         </div>
       ) : (
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 container-custom mx-auto py-6">
+      <div className="flex flex-col xl:flex-row gap-6 w-full px-4 xl:px-8 py-6">
         {/* Folder Navigation Sidebar */}
-        <aside className="xl:col-span-1">
+        <aside className="xl:w-80 flex-shrink-0">
           <FolderNav
             currentFolderId={currentFolderId}
             onFolderSelect={(path) => navigateToPath(path)}
@@ -564,49 +619,24 @@ export default function Home({ params }) {
         </aside>
 
         {/* Main Content */}
-        <main className="xl:col-span-3 space-y-6">
-          {/* Breadcrumb & Settings Toggle */}
-          <div className="flex items-center gap-4">
-             <div className="flex-1">
-                <Breadcrumb
-                    currentPath={currentPath}
-                    currentFolderId={currentFolderId}
-                    currentFolderInfo={currentFolderInfo}
-                    onNavigate={(path) => navigateToPath(path)}
-                />
-             </div>
-             <button
-                onClick={() => setShowSettings(true)}
-                title="Security Settings"
-                className="p-2 rounded-lg bg-white/50 hover:bg-white text-gray-600 hover:text-blue-600 transition-colors"
-             >
-                <span className="text-xl">🛡️</span>
-             </button>
+        <main className="flex-1 min-w-0 space-y-6">
+          {/* Mobile Breadcrumbs (hidden on md+) */}
+          <div className="md:hidden">
+              <Breadcrumb
+                  currentPath={currentPath}
+                  currentFolderId={currentFolderId}
+                  currentFolderInfo={currentFolderInfo}
+                  onNavigate={(path) => navigateToPath(path)}
+              />
           </div>
 
-          {/* Upload Section */}
-          <section>
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                  <span>📤</span>
-                  Upload File
-                </h2>
-                <p className="text-xs text-gray-600 mt-1">Add new files to {currentFolderInfo ? `"${currentFolderInfo.name}"` : 'your storage'}</p>
-              </div>
-              <button
-                onClick={() => setShowCreateFolder(true)}
-                className="bg-white border border-gray-200 text-gray-700 hover:text-blue-600 hover:border-blue-200 px-4 py-2 rounded-lg text-sm font-medium shadow-sm hover:shadow transition-all flex items-center gap-2"
-              >
-                <span className="text-lg leading-none">+</span> New Folder
-              </button>
-            </div>
-            <UploadForm
-                onFileUploaded={handleFileUploaded}
-                currentFolderId={currentFolderId}
-                externalFiles={droppedFiles}
-            />
-          </section>
+          <UploadForm
+              ref={uploadFormRef}
+              onFileUploaded={handleFileUploaded}
+              currentFolderId={currentFolderId}
+              externalFiles={droppedFiles}
+              hideDropZone={true}
+          />
 
           {/* Files Section */}
           <section className="space-y-4">
