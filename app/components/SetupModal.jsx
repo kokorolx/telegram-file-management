@@ -13,7 +13,7 @@ export default function SetupModal({ onSetupComplete }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [setupComplete, setSetupComplete] = useState(false);
-  const [useDefault, setUseDefault] = useState(false);
+  const [useDefault, setUseDefault] = useState(true); // Always use default for now
 
   useEffect(() => {
     checkSetup();
@@ -85,9 +85,9 @@ export default function SetupModal({ onSetupComplete }) {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full mx-4">
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Setup Required</h2>
-        <p className="text-gray-600 mb-6">
-          Configure your Telegram bot credentials to get started.
-        </p>
+         <p className="text-gray-600 mb-6">
+           Set your master password to encrypt your vault.
+         </p>
 
         <form onSubmit={handleSetup} className="space-y-4">
           {error && (
@@ -96,41 +96,8 @@ export default function SetupModal({ onSetupComplete }) {
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Telegram Bot Token
-            </label>
-            <input
-              type="password"
-              value={botToken}
-              onChange={(e) => setBotToken(e.target.value)}
-              placeholder="Get from @BotFather on Telegram"
-              disabled={loading || useDefault}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-400"
-              required={!useDefault}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Find it at https://t.me/botfather
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Your Telegram User ID
-            </label>
-            <input
-              type="text"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              placeholder="Find your ID with @userinfobot"
-              disabled={loading || useDefault}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-400"
-              required={!useDefault}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Get it from https://t.me/userinfobot
-            </p>
-          </div>
+          {/* Bot Token and User ID inputs are disabled for now - using default config */}
+          {/* TODO: Re-enable these fields in future if needed */}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -215,23 +182,16 @@ export default function SetupModal({ onSetupComplete }) {
 
         <div className="mt-4 pt-4 border-t border-gray-200">
              <div className="flex items-center gap-2 mb-2">
-                <input
-                    type="checkbox"
-                    id="useDefault"
-                    checked={useDefault}
-                    onChange={(e) => setUseDefault(e.target.checked)}
-                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                />
-                <label htmlFor="useDefault" className="text-sm font-medium text-gray-700 select-none">
-                    Use default configuration (.env)
+                <div className="w-4 h-4 text-blue-600 rounded border border-blue-600 bg-blue-600 flex items-center justify-center">
+                   <span className="text-white text-xs">✓</span>
+                </div>
+                <label className="text-sm font-medium text-gray-700">
+                    Using default configuration (.env)
                 </label>
              </div>
-             {useDefault && (
-                 <p className="text-xs text-gray-500 pl-6">
-                    Will use TELEGRAM_BOT_TOKEN and TELEGRAM_USER_ID from server environment.
-                    <strong>Setup Token is NOT required in this mode.</strong>
-                 </p>
-             )}
+             <p className="text-xs text-gray-500 pl-6">
+                Using TELEGRAM_BOT_TOKEN and TELEGRAM_USER_ID from server environment.
+             </p>
         </div>
 
         <div className="mt-6 pt-6 border-t border-gray-200">
