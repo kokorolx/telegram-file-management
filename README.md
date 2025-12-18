@@ -1,174 +1,66 @@
-# Telegram File Manager
+# 🔒 Telegram File Management
 
-A Next.js-based file management system that stores files on Telegram and maintains metadata in SQLite.
+A secure, Zero-Knowledge file management system that uses Telegram as a backend for unlimited, free cloud storage.
+
+![Telegram File Manager](/docs/screenshots/dashboard.png)
 
 ## Features
 
-- **Upload files** to Telegram with metadata storage
-- **List all files** with sortable view
-- **Download files** directly from Telegram
-- **Delete files** from database
-- **Add descriptions and tags** to files
-- **No storage costs** - use Telegram as free CDN
+- **🛡️ Zero-Knowledge Security**: All files are encrypted in your browser using AES-256-GCM before upload. Your master password never touches the server.
+- **☁️ Telegram Storage**: Leverages the Telegram Bot API to store files as documents, providing a reliable and virtually unlimited storage backend.
+- **📁 Folder Management**: Organize your files in a nested directory structure with friendly URLs (slugs).
+- **🎥 Secure Streaming**: Watch encrypted videos and listen to audio directly in the browser through on-the-fly decryption streams.
+- **🚀 Parallel Processing**: High-performance multi-part uploads and downloads with parallel cryptography.
+- **👤 Multi-User Support**: Each user has their own private vault and can configure their own Telegram bots.
+- **📱 Responsive Design**: Modern UI built with Tailwind CSS, optimized for both desktop and mobile.
 
-## Quick Start
+## Getting Started
 
-### 1. Clone/Setup
+### Prerequisites
 
-```bash
-git clone <repo-url>
-cd telegram-file-manager
-npm install
-```
+- Node.js 18+
+- PostgreSQL
+- A Telegram Bot (via [@BotFather](https://t.me/BotFather))
+- Your Telegram User ID (via [@userinfobot](https://t.me/userinfobot))
 
-### 2. Get Telegram Bot Token
+### Installation
 
-1. Open [Telegram BotFather](https://t.me/BotFather)
-2. Send `/newbot` and follow instructions
-3. Copy your bot token
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Set up environment variables:
+   ```bash
+   cp .env.local.example .env.local
+   ```
+4. Initialize the database:
+   ```bash
+   npm run setup-db
+   ```
+5. Start the development server:
+   ```bash
+   npm run dev
+   ```
 
-### 3. Configure Environment
+## Documentation
 
-```bash
-cp .env.local.example .env.local
-# Edit .env.local and add your TELEGRAM_BOT_TOKEN
-```
+For more detailed information, please refer to the following documents:
 
-### 4. Initialize Database
+- [**Architecture Overview**](docs/ARCHITECTURE.md): Technical design and technology stack.
+- [**Security Model**](docs/SECURITY.md): Details on the Zero-Knowledge implementation and cryptography.
+- [**API Reference**](docs/API.md): Documentation for the backend endpoints.
+- [**Database Schema**](docs/DATABASE.md): PostgreSQL table structures and relationships.
 
-```bash
-npm run setup-db
-```
+## Deployment
 
-### 5. Start Development Server
+This project is optimized for deployment on **Vercel** with a **Neon** or **Supabase** PostgreSQL database.
 
-```bash
-npm run dev -- -p 3999
-```
-
-Visit http://localhost:3999
-
-## Architecture
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed system design.
-
-## API Documentation
-
-See [API.md](./API.md) for complete API reference.
-
-## Database Schema
-
-```sql
-CREATE TABLE files (
-  id TEXT PRIMARY KEY,
-  telegram_file_id TEXT UNIQUE NOT NULL,
-  original_filename TEXT NOT NULL,
-  file_size INTEGER NOT NULL,
-  file_type TEXT,
-  mime_type TEXT,
-  uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  description TEXT,
-  tags TEXT
-);
-```
-
-## Project Structure
-
-```
-telegram-file-manager/
-├── app/
-│   ├── api/                 # API routes
-│   ├── components/          # React components
-│   ├── page.jsx            # Home page
-│   └── layout.jsx          # Root layout
-├── lib/
-│   ├── db.js               # Database functions
-│   ├── telegram.js         # Telegram bot wrapper
-│   └── utils.js            # Utility functions
-├── scripts/
-│   └── init-db.js          # Database initialization
-├── db/                     # SQLite database (created at runtime)
-└── public/                 # Static files
-```
-
-## Key Technologies
-
-- **Framework**: Next.js 14 (App Router)
-- **Database**: SQLite3
-- **Telegram API**: node-telegram-bot-api
-- **Frontend**: React with Tailwind CSS
-- **Styling**: Tailwind CSS
-
-## Development
-
-### Commands
-
-```bash
-npm run dev                 # Start dev server on port 3000
-npm run dev -- -p 3999     # Start on custom port
-npm run build              # Production build
-npm run start              # Start production server
-npm run lint               # Run ESLint
-npm run setup-db           # Initialize database
-```
-
-### Port 3999
-
-As requested, the development server can be run on port 3999:
-
-```bash
-npm run dev -- -p 3999
-```
-
-## Limitations & Future Enhancements
-
-### Current Limitations
-
-- No user authentication (single user only)
-- No file search or advanced filtering
-- No folder/category organization
-- No file previews
-- Download URLs expire in ~1 hour (re-fetched on each request)
-
-### Planned Features (Phase 2)
-
-- Search & filtering by name, type, date
-- Folder/category organization
-- File preview thumbnails
-- Advanced tagging system
-- Bulk operations
-- Public sharing links
-- User authentication & multi-user support
-
-## Troubleshooting
-
-### Database Errors
-
-**"Database locked"**
-- Restart the development server
-- Normal in SQLite with concurrent writes
-
-### Telegram Errors
-
-**"Bot token not found"**
-- Check `.env.local` contains `TELEGRAM_BOT_TOKEN`
-- Restart dev server after adding token
-
-**"Failed to upload file to Telegram"**
-- Verify bot token is correct
-- Check bot has message permissions
-- File might be too large (max 100MB)
-
-### Dependencies
-
-**"Cannot find module"**
-- Run `npm install` again
-- Delete `node_modules` and reinstall if issues persist
+1. Push your code to GitHub.
+2. Connect your repository to Vercel.
+3. Configure the `DATABASE_URL` and `NEXTAUTH_SECRET` environment variables.
+4. Deploy!
 
 ## License
 
 MIT
-
-## Support
-
-For issues and feature requests, open an issue on the repository.
