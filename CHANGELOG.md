@@ -5,19 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- **Path-based chunk download API** - Converted `/api/chunk?file_id=X&part=Y` to `/api/chunk/[fileId]/[partNumber]` for better caching support
-- **Browser caching for chunks** - Encrypted chunks now cached for 1 year with `immutable` flag since content never changes
-- **Immediate login feedback** - User context now refreshes immediately after login without requiring page reload
-
-### Changed
-- **Cache-Control headers** - Changed from `no-cache, no-store, must-revalidate` to `max-age=31536000, immutable` for encrypted chunks
-- **LoginDialog integration** - `handleLoginSuccess()` now calls `checkAuth()` to update user state immediately
-
-### Deprecated
-- **Query parameter chunk endpoint** - `/api/chunk?file_id=X&part=Y` now returns 410 Gone, use path-based endpoint instead
+- **BigInt Support for Large Files** - Updated DB schema to handle file sizes exceeding 2.1GB (switched `INTEGER` to `BIGINT`).
+- **Fresh Logout Policy** - UI now completely hides and clears all files, folders, and metadata when the user logs out.
+- **Auto-Locking Vault** - Encryption vault now automatically locks and revokes all in-memory decrypted blobs (videos, images) on logout.
 
 ### Fixed
-- **Login UI not updating** - Fixed race condition where username wasn't displayed after login until page refresh
+- **Upload Race Condition** - Ensured sequential processing of the first file chunk to prevent "Failed to create or retrieve file" errors during parallel uploads.
+- **Unauthorized File Access** - Removed insecure legacy `session_token` fallbacks; validated every file request against active user sessions.
+- **Video Decryption Error** - Fixed `CryptoKey` type mismatch in the browser.
+- **Multi-Bot Resolution** - Correctly threaded `userId` through `fileService.js` to ensure files reach the correct Telegram bot.
+- **Login UI not updating** - Fixed race condition where username wasn't displayed after login until page refresh.
 
 ---
 
