@@ -21,6 +21,27 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2025-12-18] - Browser-Side Decryption & Binary Streaming
+
+### Added
+- **Zero-Knowledge Key Management** - Server returns user-specific `encryption_salt` during unlock; browser derives key locally in RAM.
+- **Binary Chunk Delivery** - `/api/chunk` now returns raw binary data (`application/octet-stream`) instead of Base64 JSON.
+- **Cryptographic Metadata in Parts API** - `/api/files/[id]/parts` now exposes `iv` and `auth_tag` for efficient client-side lookup.
+- **Improved Caching** - Binary chunks are marked as `immutable` for 1 year; decrypted blobs are cached in a per-session `blobCache`.
+- **Parallel Decryption** - Downloads and previews now fetch and decrypt multiple chunks simultaneously for better performance.
+
+### Changed
+- **EncryptionContext** - Now manages derived `encryptionKey` and `salt` in browser RAM, eliminating redundant re-derivation.
+- **Download API (POST)** - No longer requires master password; client now handles full decryption using locally derived key.
+- **Secure Components** - `SecureImage`, `FileRow`, `PreviewModal`, and `VideoPlayer` refactored to use the new decentralized decryption flow.
+- **Setup Flow** - `SetupModal` now automatically unlocks the vault and derives the key immediately after setting a master password.
+
+### Fixed
+- **Video Playback Performance** - Removed Base64 decoding overhead; video player now streams raw binary chunks directly.
+- **Streaming Logic** - Fixed regression in `createDecryptedStream` to properly handle new metadata format.
+
+---
+
 ## [Previous Session] - Session-based Authentication & Upload Encryption
 
 ### Added
@@ -66,11 +87,11 @@ All notable changes to this project will be documented in this file.
 6. Chunk metadata stored in `file_parts` table (no plaintext stored)
 
 ### File Download/Streaming Flow
-1. Client requests chunk from `/api/chunk/[fileId]/[partNumber]`
-2. Server fetches encrypted chunk from Telegram
-3. Server returns base64 encrypted data + metadata (iv, auth_tag)
-4. Client-side browser decrypts chunk using Web Crypto API
-5. Browser combines chunks into original file (for full file) or streams (for video/audio)
+1. Client requests metadata from `/api/files/[id]/parts` (returns all IVs/AuthTags).
+2. Client requests raw encrypted chunks from `/api/chunk/[fileId]/[partNumber]`.
+3. Server fetches encrypted chunk from Telegram and streams raw binary data.
+4. Client-side browser decrypts chunk using Web Crypto API and locally stored derived key.
+5. Browser combines chunks into original file or streams them via `createDecryptedStream`.
 
 ---
 
@@ -81,8 +102,14 @@ All notable changes to this project will be documented in this file.
 - `app/components/UploadForm.jsx` - File upload with browser-side encryption
 - `app/components/LoginDialog.jsx` - Login/register UI
 - `app/contexts/UserContext.js` - User state management
-- `lib/clientDecryption.js` - Client-side decryption utilities
-- `app/components/VideoPlayer.jsx` - Video streaming with chunk decryption
+- `lib/clientDecryption.js` - Client-side decryption with parallel fetching and raw binary support
+- `app/components/VideoPlayer.jsx` - Refactored for binary streaming and shared encryption context
+- `app/components/SecureImage.jsx` - Updated for browser-side blob assembly
+- `app/components/FileRow.jsx` - Updated for decentralized file downloads
+- `app/contexts/EncryptionContext.js` - Expanded to manage derived keys and salts
+- `app/components/PreviewModal.jsx` - Unified decryption for images, audio, and documents
+- `app/components/SetupModal.jsx` - Integrated with unlock flow
+- `app/components/FolderNav.jsx` - Captured salt and triggered context unlock
 - `app/layout.jsx` - Root layout with UserProvider
 
 ### Backend
@@ -93,7 +120,10 @@ All notable changes to this project will be documented in this file.
 - `app/api/auth/register/route.js` - User registration endpoint
 - `app/api/auth/logout/route.js` - User logout endpoint
 - `app/api/upload/chunk/route.js` - Encrypted chunk upload handler
-- `app/api/chunk/[fileId]/[partNumber]/route.js` - Encrypted chunk download (path-based)
+- `app/api/auth/verify-master/route.js` - Returns encryption salt on success
+- `app/api/settings/route.js` - Returns salt on setup/password change
+- `app/api/chunk/[fileId]/[partNumber]/route.js` - Raw binary chunk delivery
+- `app/api/files/[id]/parts/route.js` - Included cryptographic metadata (iv, auth_tag)
 - `app/api/files/route.js` - File listing with user filtering
 - `app/api/folders/route.js` - Folder management with user filtering
 
@@ -108,7 +138,8 @@ All notable changes to this project will be documented in this file.
 1. **Orphaned chunks on cancel** - Cancelled uploads leave partial chunks in database (cleanup needed)
 2. **No resume capability** - Cancelled uploads cannot be resumed
 3. **Single user per device** - No multi-user session support yet
-4. **Master password requirement** - All uploads require master password entry (no unlock persistence)
+4. **Browser Memory Usage** - Assembling very large files (>1GB) in-browser may require significant RAM.
+5. **No resume capability** - Cancelled uploads/downloads cannot be resumed easily yet.
 
 ---
 

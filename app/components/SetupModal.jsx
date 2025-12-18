@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useUser } from '../contexts/UserContext';
+import { useEncryption } from '../contexts/EncryptionContext';
 
 export default function SetupModal({ onSetupComplete, refreshTrigger }) {
   const [showModal, setShowModal] = useState(false);
@@ -17,6 +18,7 @@ export default function SetupModal({ onSetupComplete, refreshTrigger }) {
   const [hasMasterPassword, setHasMasterPassword] = useState(true);
   const [useDefault, setUseDefault] = useState(true); // Always use default for now
   const { user } = useUser();
+  const { unlock } = useEncryption();
 
   useEffect(() => {
     checkSetup();
@@ -98,6 +100,12 @@ export default function SetupModal({ onSetupComplete, refreshTrigger }) {
 
       setShowModal(false);
       setHasMasterPassword(true);
+
+      // Automatically unlock the vault after setting password
+      if (data.salt) {
+          await unlock(masterPassword, data.salt);
+      }
+
       if (onSetupComplete) {
         onSetupComplete();
       }

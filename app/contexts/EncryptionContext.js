@@ -1,16 +1,18 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect } from 'react';
-import { clearSecureCache } from '@/lib/secureImageCache'; // Use absolute path alias if possible, or relative
+import { clearSecureCache } from '@/lib/secureImageCache';
+import { deriveEncryptionKeyBrowser } from '@/lib/clientDecryption';
 
 const EncryptionContext = createContext();
 
 export function EncryptionProvider({ children }) {
   const [masterPassword, setMasterPassword] = useState(null);
+  const [encryptionKey, setEncryptionKey] = useState(null);
+  const [salt, setSalt] = useState(null);
   const [isUnlocked, setIsUnlocked] = useState(false);
 
-  // We do NOT store this in localStorage/cookie to adhere to "RAM Only"
-  // Warn user if they reload page
+  // ... beforeunload effect ...
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       if (isUnlocked) {
@@ -22,19 +24,29 @@ export function EncryptionProvider({ children }) {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isUnlocked]);
 
-  const unlock = (password) => {
-    setMasterPassword(password);
-    setIsUnlocked(true);
+  const unlock = async (password, userSalt) => {
+    try {
+      const key = await deriveEncryptionKeyBrowser(password, userSalt);
+      setMasterPassword(password);
+      setEncryptionKey(key);
+      setSalt(userSalt);
+      setIsUnlocked(true);
+    } catch (err) {
+      console.error('Failed to derive encryption key:', err);
+      throw err;
+    }
   };
 
   const lock = () => {
     setMasterPassword(null);
+    setEncryptionKey(null);
+    setSalt(null);
     setIsUnlocked(false);
     clearSecureCache();
   };
 
   return (
-    <EncryptionContext.Provider value={{ masterPassword, isUnlocked, unlock, lock }}>
+    <EncryptionContext.Provider value={{ masterPassword, encryptionKey, salt, isUnlocked, unlock, lock }}>
       {children}
     </EncryptionContext.Provider>
   );

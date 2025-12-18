@@ -78,6 +78,7 @@ export async function POST(request) {
     return NextResponse.json({
       success: true,
       message: 'Settings saved successfully',
+      salt: encryptionSalt
     });
   } catch (error) {
     console.error('Settings save error:', error);
@@ -181,6 +182,7 @@ export async function PUT(request) {
     return NextResponse.json({
       success: true,
       message: 'Master password updated successfully',
+      salt: encryptionSalt
     });
   } catch (error) {
     console.error('Settings update error:', error);

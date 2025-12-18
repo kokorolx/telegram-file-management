@@ -21,7 +21,12 @@ export async function POST(request) {
     const isValid = await validateMasterPassword(password, userId);
 
     if (isValid) {
-        return NextResponse.json({ success: true });
+        const { getUserById } = await import('@/lib/db');
+        const user = await getUserById(userId);
+        return NextResponse.json({
+          success: true,
+          salt: user?.encryption_salt || 'telegram-file-manager-fixed-salt'
+        });
     } else {
         return NextResponse.json({ success: false, error: 'Invalid master password' }, { status: 400 });
     }

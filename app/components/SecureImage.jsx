@@ -5,7 +5,7 @@ import { useEncryption } from '../contexts/EncryptionContext';
 import { blobCache } from '@/lib/secureImageCache'; // Use alias if possible or relative path
 
 export default function SecureImage({ file, className, alt, ...props }) {
-  const { masterPassword, isUnlocked } = useEncryption();
+  const { masterPassword, encryptionKey, isUnlocked } = useEncryption();
   const [src, setSrc] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -52,20 +52,14 @@ export default function SecureImage({ file, className, alt, ...props }) {
         setLoading(true);
         setError(null);
 
-        const res = await fetch('/api/download', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            file_id: file.id,
-            master_password: masterPassword
-          })
-        });
+        const { fetchFilePartMetadata, fetchAndDecryptFullFile } = await import('@/lib/clientDecryption');
 
-        if (!res.ok) throw new Error('Failed to load image');
+        // 1. Fetch parts metadata (IVs, AuthTags)
+        const parts = await fetchFilePartMetadata(file.id);
 
-        const blob = await res.blob();
+        // 2. Fetch and decrypt all chunks in parallel
+        const blob = await fetchAndDecryptFullFile(file.id, encryptionKey, parts);
+
         const url = URL.createObjectURL(blob);
 
         // Update global cache immediately, regardless of mount state
@@ -82,9 +76,11 @@ export default function SecureImage({ file, className, alt, ...props }) {
       }
     }
 
-    fetchImage();
+    if (encryptionKey) {
+        fetchImage();
+    }
 
-  }, [file.id, file.is_encrypted, masterPassword, isUnlocked]);
+  }, [file.id, file.is_encrypted, masterPassword, encryptionKey, isUnlocked]);
 
   // Locked State
   if (file.is_encrypted && !isUnlocked) {

@@ -8,7 +8,7 @@ import { useEncryption } from '../contexts/EncryptionContext';
 import { blobCache } from '@/lib/secureImageCache'; // Add import
 
 export default function FileRow({ file, onFileDeleted, onContextMenu }) {
-  const { masterPassword } = useEncryption();
+  const { masterPassword, encryptionKey, isUnlocked } = useEncryption();
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -30,7 +30,7 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
   const handleDownload = async (e) => {
     e.stopPropagation();
     try {
-      if (file.is_encrypted && !masterPassword) {
+      if (file.is_encrypted && !isUnlocked) {
           alert("Please unlock with Master Password first");
           return;
       }
@@ -49,20 +49,16 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
 
       setDownloading(true);
 
-      let response;
+      let blob;
       if (file.is_encrypted) {
-           response = await fetch('/api/download', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ file_id: file.id, master_password: masterPassword })
-           });
+           const { fetchFilePartMetadata, fetchAndDecryptFullFile } = await import('@/lib/clientDecryption');
+           const parts = await fetchFilePartMetadata(file.id);
+           blob = await fetchAndDecryptFullFile(file.id, encryptionKey, parts);
       } else {
-           response = await fetch(`/api/download?file_id=${encodeURIComponent(file.id)}`);
+           const response = await fetch(`/api/download?file_id=${encodeURIComponent(file.id)}`);
+           if (!response.ok) throw new Error('Failed to download');
+           blob = await response.blob();
       }
-
-      if (!response.ok) throw new Error('Failed to download');
-
-      const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
 
       // Cache if encrypted

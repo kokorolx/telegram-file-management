@@ -7,10 +7,10 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/chunk/[fileId]/[partNumber]
- * 
+ *
  * Returns encrypted chunk data with IV and auth tag for client-side decryption
  * Server does NOT decrypt - only fetches encrypted blob from Telegram
- * 
+ *
  * Response format:
  * {
  *   encrypted_data: "base64-encoded-encrypted-bytes",
@@ -85,23 +85,17 @@ export async function GET(request, { params }) {
     // Get encrypted buffer (NOT decrypted)
     const encryptedBuffer = Buffer.from(await telegramResponse.arrayBuffer());
 
-    // Return encrypted data + metadata for client-side decryption
-    return NextResponse.json(
-      {
-        encrypted_data: encryptedBuffer.toString('base64'),
-        iv: part.iv,                    // Hex string from DB
-        auth_tag: part.auth_tag,        // Hex string from DB
-        part_number: part.part_number,
-        size: part.size,
-        total_parts: parts.length
-      },
-      {
-        headers: {
-          'Cache-Control': 'private, max-age=31536000, immutable',
-          'Content-Type': 'application/json'
-        }
+    // Return RAW binary data
+    // Client already has metadata (IV, auth_tag) from /api/files/[id]/parts
+    return new NextResponse(encryptedBuffer, {
+      status: 200,
+      headers: {
+        'Cache-Control': 'private, max-age=31536000, immutable',
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': encryptedBuffer.length.toString(),
+        'X-Part-Number': part.part_number.toString(),
       }
-    );
+    });
   } catch (err) {
     console.error('Chunk fetch error:', err);
     return NextResponse.json(

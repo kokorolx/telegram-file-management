@@ -269,7 +269,7 @@ export default function FolderNav({ currentFolderId, onFolderSelect, refreshTrig
            throw new Error(data.error || "Invalid password");
        }
 
-       unlock(passwordInput);
+       await unlock(passwordInput, data.salt);
        setShowUnlockDialog(false);
        setPasswordInput('');
     } catch (err) {

@@ -6,17 +6,15 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/files/[id]/parts
- * 
- * Returns unencrypted metadata about file parts
- * Used by client to know how many chunks to fetch and their sizes
- * This endpoint returns NO cryptographic material (IV, auth_tag)
- * Those are fetched separately per-chunk for each /api/chunk request
- * 
+ *
+ * Returns metadata about file parts for browser-side decryption
+ * This endpoint now returns IV and auth_tag for each chunk
+ * These are safe to expose as they are useless without the master password
+ *
  * Response format:
  * {
  *   parts: [
- *     { part_number: 1, size: 2097152 },
- *     { part_number: 2, size: 2097152 },
+ *     { part_number: 1, size: 2097152, iv: "...", auth_tag: "..." },
  *     ...
  *   ]
  * }
@@ -52,10 +50,12 @@ export async function GET(request, { params }) {
       );
     }
 
-    // Return only safe metadata (no encryption keys or auth tags)
+    // Return metadata (IV and auth tags are needed for browser decryption)
     const parts = allParts.map(part => ({
       part_number: part.part_number,
-      size: part.size
+      size: part.size,
+      iv: part.iv,
+      auth_tag: part.auth_tag
     }));
 
     return NextResponse.json(

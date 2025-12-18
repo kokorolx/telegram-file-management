@@ -17,7 +17,7 @@ import { useEncryption } from '../contexts/EncryptionContext';
  * - Hybrid: Try MediaSource for progressive play, fallback to full download
  */
 export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
-  const { masterPassword } = useEncryption();
+  const { masterPassword, encryptionKey, salt } = useEncryption();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [currentChunk, setCurrentChunk] = useState(0);
@@ -32,75 +32,20 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
   const abortControllerRef = useRef(null);
   const decryptionKeyRef = useRef(null);
 
-  // Derive encryption key from master password using Web Crypto API
-  const deriveKeyFromPassword = useCallback(async (password) => {
-    const encoder = new TextEncoder();
-    const passwordData = encoder.encode(password);
+  // Removed local key derivation - using EncryptionContext
 
-    // Salt must match server: 'telegram-file-manager-fixed-salt'
-    const saltString = 'telegram-file-manager-fixed-salt';
-    const salt = encoder.encode(saltString);
+  // Ref to store parts metadata for chunk lookups
+  const partsRef = useRef([]);
 
-    const baseKey = await crypto.subtle.importKey(
-      'raw',
-      passwordData,
-      { name: 'PBKDF2' },
-      false,
-      ['deriveBits', 'deriveKey']
-    );
 
-    return crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: salt,
-        iterations: 100000,
-        hash: 'SHA-256',
-      },
-      baseKey,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['decrypt']
-    );
-  }, []);
-
-  // Decrypt a chunk using IV and authTag
-  const decryptChunk = useCallback(async (encryptedData, ivHex, authTagHex, key) => {
-    console.log(`[Decrypt] Starting decryption...`);
-    console.log(`[Decrypt] IV hex: ${ivHex} (${ivHex?.length} chars)`);
-    console.log(`[Decrypt] AuthTag hex: ${authTagHex} (${authTagHex?.length} chars)`);
-    console.log(`[Decrypt] Encrypted data size: ${encryptedData.byteLength} bytes`);
-
-    const iv = new Uint8Array(ivHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-    const authTag = new Uint8Array(authTagHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-    const encryptedArray = new Uint8Array(encryptedData);
-
-    console.log(`[Decrypt] IV: ${iv.length} bytes, AuthTag: ${authTag.length} bytes`);
-
-    // AES-GCM expects auth tag appended to ciphertext
-    const combined = new Uint8Array(encryptedArray.length + authTag.length);
-    combined.set(encryptedArray);
-    combined.set(authTag, encryptedArray.length);
-
-    console.log(`[Decrypt] Combined size: ${combined.length} bytes`);
-
-    try {
-      const decrypted = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: iv },
-        key,
-        combined
-      );
-
-      console.log(`[Decrypt] Success! Decrypted size: ${decrypted.byteLength} bytes`);
-      return new Uint8Array(decrypted);
-    } catch (err) {
-      console.error(`[Decrypt] FAILED:`, err);
-      throw new Error(`Decryption failed: ${err.message}`);
-    }
-  }, []);
 
   // Fetch and decrypt a single chunk from API endpoint
    const fetchAndDecryptChunk = useCallback(async (chunkNum, key, signal) => {
-     // Fetch encrypted chunk metadata from server (NEW endpoint)
+     // Find metadata for this chunk
+     const part = partsRef.current.find(p => p.part_number === chunkNum);
+     if (!part) throw new Error(`Metadata missing for chunk ${chunkNum}`);
+
+     // Fetch raw encrypted chunk
      const response = await fetch(
        `/api/chunk/${encodeURIComponent(fileId)}/${chunkNum}`,
        { signal }
@@ -111,25 +56,19 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
        throw new Error(`Failed to fetch chunk ${chunkNum}: ${data.error || response.status}`);
      }
 
-     const chunkData = await response.json();
-     const {
-       encrypted_data,   // Base64-encoded
-       iv,               // Hex string
-       auth_tag,         // Hex string
-       total_parts
-     } = chunkData;
+     const encryptedBuffer = await response.arrayBuffer();
+     const iv = new Uint8Array(part.iv.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+     const authTag = new Uint8Array(part.auth_tag.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
 
-     // Convert from Base64 to ArrayBuffer
-     const binaryString = atob(encrypted_data);
-     const bytes = new Uint8Array(binaryString.length);
-     for (let i = 0; i < binaryString.length; i++) {
-       bytes[i] = binaryString.charCodeAt(i);
-     }
-     const encryptedData = bytes.buffer;
+     // Decrypt
+     const decrypted = await crypto.subtle.decrypt(
+       { name: 'AES-GCM', iv: iv },
+       key,
+       new Uint8Array([...new Uint8Array(encryptedBuffer), ...authTag])
+     );
 
-     const decrypted = await decryptChunk(encryptedData, iv, auth_tag, key);
-     return { decrypted, total: total_parts };
-   }, [fileId, decryptChunk]);
+     return { decrypted, total: partsRef.current.length };
+   }, [fileId]);
 
   // Append to MediaSource buffer with queue handling
   const appendToSourceBuffer = useCallback((sourceBuffer, data) => {
@@ -179,9 +118,14 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
       try {
         setIsLoading(true);
         setError(null);
-        setLoadingStage('Deriving encryption key...');
 
-        const key = await deriveKeyFromPassword(masterPassword);
+        // Wait for encryption key to be ready
+        if (!encryptionKey) {
+            setLoadingStage('Waiting for encryption key...');
+            return;
+        }
+
+        const key = encryptionKey;
         decryptionKeyRef.current = key;
 
         if (cancelled) return;
@@ -198,8 +142,9 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
 
          const partsData = await partsRes.json();
          const totalChunks = partsData.parts.length;
+         partsRef.current = partsData.parts;
          setTotalChunks(totalChunks);
-         
+
          // Create manifest-like object for compatibility
          const manifest = { totalChunks, parts: partsData.parts };
 
@@ -391,7 +336,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
       }
       if (videoSrc) URL.revokeObjectURL(videoSrc);
     };
-  }, [fileId, masterPassword, mimeType, deriveKeyFromPassword, fetchAndDecryptChunk, appendToSourceBuffer]);
+  }, [fileId, encryptionKey, mimeType, fetchAndDecryptChunk, appendToSourceBuffer]);
 
   // Cleanup
   useEffect(() => {

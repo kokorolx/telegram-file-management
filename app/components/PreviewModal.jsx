@@ -8,19 +8,19 @@ import { deriveEncryptionKeyBrowser, fetchAndDecryptFullFile, fetchFilePartMetad
 // Helper function to get file icon based on mime type
 function getFileIcon(mimeType, filename) {
   if (!mimeType && !filename) return '📄';
-  
+
   const type = (mimeType || '').toLowerCase();
   const name = (filename || '').toLowerCase();
-  
+
   // Documents
   if (type.includes('word') || name.endsWith('.doc') || name.endsWith('.docx')) return '📝';
   if (type.includes('spreadsheet') || type.includes('excel') || name.endsWith('.xls') || name.endsWith('.xlsx') || name.endsWith('.csv')) return '📊';
   if (type.includes('presentation') || name.endsWith('.ppt') || name.endsWith('.pptx')) return '🎯';
-  
+
   // Archives
   if (type.includes('zip') || type.includes('rar') || type.includes('7z') || type.includes('tar') || type.includes('gzip')) return '📦';
   if (name.endsWith('.zip') || name.endsWith('.rar') || name.endsWith('.7z') || name.endsWith('.tar') || name.endsWith('.gz')) return '📦';
-  
+
   // Code
   if (type.includes('javascript') || type.includes('typescript') || name.endsWith('.js') || name.endsWith('.ts') || name.endsWith('.jsx') || name.endsWith('.tsx')) return '💻';
   if (type.includes('python') || name.endsWith('.py')) return '🐍';
@@ -28,13 +28,13 @@ function getFileIcon(mimeType, filename) {
   if (type.includes('xml') || name.endsWith('.xml')) return '🏷️';
   if (type.includes('css') || name.endsWith('.css')) return '🎨';
   if (type.includes('html') || name.endsWith('.html')) return '🌐';
-  
+
   // Text
   if (type.includes('text') || type.includes('plain') || name.endsWith('.txt') || name.endsWith('.md') || name.endsWith('.markdown')) return '📄';
-  
+
   // Audio (fallback)
   if (type.includes('audio')) return '🎵';
-  
+
   // Default
   return '📄';
 }
@@ -42,7 +42,7 @@ function getFileIcon(mimeType, filename) {
 // Helper function to get readable file type name
 function getFileTypeName(mimeTypeOrFilename) {
   const input = (mimeTypeOrFilename || '').toLowerCase();
-  
+
   if (input.includes('word') || input.endsWith('.doc') || input.endsWith('.docx')) return 'Word Document';
   if (input.includes('spreadsheet') || input.includes('excel') || input.endsWith('.xls') || input.endsWith('.xlsx') || input.endsWith('.csv')) return 'Spreadsheet';
   if (input.includes('presentation') || input.endsWith('.ppt') || input.endsWith('.pptx')) return 'Presentation';
@@ -61,12 +61,12 @@ function getFileTypeName(mimeTypeOrFilename) {
   if (input.endsWith('.markdown')) return 'Markdown File';
   if (input.includes('audio')) return 'Audio File';
   if (input.includes('application')) return 'Application File';
-  
+
   return 'File';
 }
 
 export default function PreviewModal({ file, isOpen, onClose }) {
-  const { masterPassword, isUnlocked, unlock } = useEncryption();
+  const { masterPassword, encryptionKey, salt, isUnlocked, unlock } = useEncryption();
   const [mounted, setMounted] = useState(false);
   const [secureSrc, setSecureSrc] = useState(null);
   const [inputPassword, setInputPassword] = useState('');
@@ -100,11 +100,13 @@ export default function PreviewModal({ file, isOpen, onClose }) {
     }
 
     // 3. Encrypted and Unlocked -> Fetch Secure Blob
-    loadSecure(masterPassword);
+    if (encryptionKey) {
+        loadSecure(encryptionKey);
+    }
 
-  }, [isOpen, file, isUnlocked, masterPassword]);
+  }, [isOpen, file, isUnlocked, masterPassword, encryptionKey]);
 
-  async function loadSecure(password) {
+  async function loadSecure(key) {
         try {
             setLoading(true);
             setError(null);
@@ -120,20 +122,10 @@ export default function PreviewModal({ file, isOpen, onClose }) {
             // For audio: Decrypt in browser using client-side decryption
             if (file?.mime_type?.startsWith('audio/')) {
                 try {
-                    // Check cache first
-                    if (blobCache.has(file.id)) {
-                        setSecureSrc(blobCache.get(file.id).url);
-                        setLoading(false);
-                        return;
-                    }
-
-                    // Derive encryption key in browser
-                    const key = await deriveEncryptionKeyBrowser(password);
-
-                    // Fetch part metadata
+                    // 2. Fetch part metadata
                     const partMetadata = await fetchFilePartMetadata(file.id);
 
-                    // Decrypt entire audio file in browser
+                    // 3. Decrypt entire audio file in browser
                     const decryptedBlob = await fetchAndDecryptFullFile(file.id, key, partMetadata);
 
                     // Create blob URL and cache
@@ -155,13 +147,10 @@ export default function PreviewModal({ file, isOpen, onClose }) {
                 return;
             }
 
-            // 2. Derive encryption key in BROWSER from password
-            const key = await deriveEncryptionKeyBrowser(password);
-
-            // 3. Fetch unencrypted part metadata
+            // 2. Fetch unencrypted part metadata
             const partMetadata = await fetchFilePartMetadata(file.id);
 
-            // 4. Decrypt entire file in BROWSER (chunks fetched encrypted, decrypted locally)
+            // 3. Decrypt entire file in BROWSER (chunks fetched encrypted, decrypted locally)
             const decryptedBlob = await fetchAndDecryptFullFile(file.id, key, partMetadata);
 
             // 5. Force correct MIME type for PDFs
@@ -183,8 +172,21 @@ export default function PreviewModal({ file, isOpen, onClose }) {
   const handleUnlock = (e) => {
       e.preventDefault();
       if (!inputPassword) return;
-      unlock(inputPassword);
-      // Effect will trigger loadSecure
+
+      // We need to fetch salt first if we want to unlock from here
+      // But usually user is already logged in and context has salt?
+      // If not, we fetch from /api/settings
+      fetch('/api/auth/verify-master', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: inputPassword })
+      }).then(res => res.json()).then(data => {
+          if (data.success) {
+              unlock(inputPassword, data.salt);
+          } else {
+              setError(data.error || "Invalid password");
+          }
+      });
   };
 
 
