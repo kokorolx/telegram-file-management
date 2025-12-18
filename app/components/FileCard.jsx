@@ -26,7 +26,9 @@ export default function FileCard({ file, onFileDeleted, onContextMenu }) {
   const isImage = file.mime_type?.startsWith('image/');
   const isVideo = file.mime_type?.startsWith('video/');
   const isAudio = file.mime_type?.startsWith('audio/');
-  const isPreviewable = isImage || isVideo || isAudio;
+  const isPdf = file.mime_type?.includes('pdf') || file.original_filename?.toLowerCase().endsWith('.pdf');
+  // Preview button shows for all file types (media + PDF + unsupported file type thumbnails)
+  const isPreviewable = isImage || isVideo || isAudio || isPdf || true;
 
   const handleDownload = async () => {
     try {

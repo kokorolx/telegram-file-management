@@ -12,6 +12,7 @@ import DropZone from '../components/DropZone';
 import SettingsDialog from '../components/SettingsDialog';
 import LoginDialog from '../components/LoginDialog';
 import ContextMenu from '../components/ContextMenu';
+import { FileListSkeletonGrid, FileListSkeletonRow } from '../components/SkeletonLoader';
 import Link from 'next/link';
 
 export default function Home({ params }) {
@@ -46,6 +47,7 @@ export default function Home({ params }) {
   const [droppedFiles, setDroppedFiles] = useState([]);
   const [contextMenu, setContextMenu] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
+  const [viewMode, setViewMode] = useState('grid');
 
   // Reset state when path changes (Navigation)
   useEffect(() => {
@@ -168,7 +170,7 @@ export default function Home({ params }) {
       fetchFolders();
   }, [currentFolderId, refreshTrigger]);
 
-  async function fetchFolders() {
+  const fetchFolders = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (currentFolderId) params.set('parent_id', currentFolderId);
@@ -185,7 +187,7 @@ export default function Home({ params }) {
     } catch (err) {
       console.error('Error fetching folders:', err);
     }
-  }
+  }, [currentFolderId]);
 
   // Navigation Helper
   const navigateToPath = (path) => {
@@ -195,6 +197,11 @@ export default function Home({ params }) {
 
   const handleFileUploaded = () => {
     setRefreshTrigger(prev => prev + 1);
+    // Force refresh folders immediately after file upload
+    // This prevents the race condition where folders get cleared
+    setTimeout(() => {
+      fetchFolders();
+    }, 100);
   };
 
   const handleFileDeleted = () => {
@@ -327,7 +334,7 @@ export default function Home({ params }) {
         />
       )}
       {/* Header */}
-      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-sm border-b border-slate-200/50">
+      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-sm border-b border-slate-200/50 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-2xl">🔒</span>
@@ -421,13 +428,15 @@ export default function Home({ params }) {
               />
             </div>
 
-            {loading ? (
-              <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-                <p className="text-3xl mb-2">⏳</p>
-                <p className="font-medium">Loading files...</p>
-              </div>
-            ) : folders.length === 0 && files.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+            {loading && files.length === 0 && folders.length === 0 ? (
+              // Show skeleton while first load
+              viewMode === 'grid' ? (
+                <FileListSkeletonGrid />
+              ) : (
+                <FileListSkeletonRow />
+              )
+            ) : folders.length === 0 && files.length === 0 && !loading ? (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-500 animate-fade-in-smooth">
                 <p className="text-4xl mb-3">📭</p>
                 <p className="font-medium text-center">
                   {searchTerm ? 'No files match your search.' : 'No files or folders yet.'}
@@ -438,7 +447,8 @@ export default function Home({ params }) {
               </div>
             ) : (
               <>
-                <div className={`transition-opacity duration-200 ${loading ? 'opacity-50' : 'opacity-100'}`}>
+                {/* Smooth transition wrapper */}
+                <div className={`transition-all duration-300 ${loading && files.length > 0 ? 'opacity-60' : 'opacity-100'}`}>
                     <FileList
                       folders={folders}
                       files={files}
@@ -453,8 +463,19 @@ export default function Home({ params }) {
                       }}
                       onFolderCreated={handleFileUploaded}
                       onItemContextMenu={handleContextMenu}
+                      onViewModeChange={setViewMode}
                     />
                 </div>
+
+                {/* Loading indicator overlay - subtle and non-intrusive */}
+                {loading && files.length > 0 && (
+                    <div className="flex justify-center py-4">
+                        <div className="text-gray-400 text-sm flex items-center gap-2">
+                            <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse" />
+                            Loading files...
+                        </div>
+                    </div>
+                )}
 
                 {/* Loader Sentinel */}
                 {hasMore && (

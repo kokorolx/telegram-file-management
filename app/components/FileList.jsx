@@ -7,18 +7,22 @@ import FileRow from './FileRow';
 import FolderRow from './FolderRow';
 import ViewToggle from './ViewToggle';
 
-export default function FileList({ folders = [], files = [], onFileDeleted, onFolderDoubleClick, onFolderCreated, onItemContextMenu, onItemMove }) {
+export default function FileList({ folders = [], files = [], onFileDeleted, onFolderDoubleClick, onFolderCreated, onItemContextMenu, onItemMove, onViewModeChange }) {
   const [sortBy, setSortBy] = useState('date-desc');
   const [viewMode, setViewMode] = useState('grid');
 
   useEffect(() => {
     const savedView = localStorage.getItem('fileManagerViewMode');
-    if (savedView) setViewMode(savedView);
-  }, []);
+    if (savedView) {
+      setViewMode(savedView);
+      if (onViewModeChange) onViewModeChange(savedView);
+    }
+  }, [onViewModeChange]);
 
   const handleViewChange = (mode) => {
     setViewMode(mode);
     localStorage.setItem('fileManagerViewMode', mode);
+    if (onViewModeChange) onViewModeChange(mode);
   };
 
   const sortedFiles = [...files].sort((a, b) => {
@@ -68,7 +72,7 @@ export default function FileList({ folders = [], files = [], onFileDeleted, onFo
       </div>
 
       {viewMode === 'grid' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-fade-in">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-fade-in-smooth">
           {folders.map((folder) => (
             <FolderCard
               key={folder.id}
@@ -90,7 +94,7 @@ export default function FileList({ folders = [], files = [], onFileDeleted, onFo
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-fade-in">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-fade-in-smooth">
            {/* List Header */}
            <div className="flex items-center gap-4 p-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
              <div className="w-10"></div>

@@ -98,27 +98,38 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
     }
   }, []);
 
-  // Fetch and decrypt a single chunk from CDN endpoint
-  const fetchAndDecryptChunk = useCallback(async (chunkNum, key, signal) => {
-    // Use CDN-friendly endpoint (no auth required)
-    const response = await fetch(`/api/stream/${fileId}/chunk/${chunkNum}`, { signal });
+  // Fetch and decrypt a single chunk from API endpoint
+   const fetchAndDecryptChunk = useCallback(async (chunkNum, key, signal) => {
+     // Fetch encrypted chunk metadata from server (NEW endpoint)
+     const response = await fetch(
+       `/api/chunk?file_id=${encodeURIComponent(fileId)}&part=${chunkNum}`,
+       { signal }
+     );
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch chunk ${chunkNum}: ${response.status}`);
-    }
+     if (!response.ok) {
+       const data = await response.json().catch(() => ({}));
+       throw new Error(`Failed to fetch chunk ${chunkNum}: ${data.error || response.status}`);
+     }
 
-    const encryptedData = await response.arrayBuffer();
-    const iv = response.headers.get('x-iv');
-    const authTag = response.headers.get('x-auth-tag');
-    const total = parseInt(response.headers.get('x-total-chunks') || '1');
+     const chunkData = await response.json();
+     const {
+       encrypted_data,   // Base64-encoded
+       iv,               // Hex string
+       auth_tag,         // Hex string
+       total_parts
+     } = chunkData;
 
-    if (!iv || !authTag) {
-      throw new Error(`Missing encryption metadata for chunk ${chunkNum}`);
-    }
+     // Convert from Base64 to ArrayBuffer
+     const binaryString = atob(encrypted_data);
+     const bytes = new Uint8Array(binaryString.length);
+     for (let i = 0; i < binaryString.length; i++) {
+       bytes[i] = binaryString.charCodeAt(i);
+     }
+     const encryptedData = bytes.buffer;
 
-    const decrypted = await decryptChunk(encryptedData, iv, authTag, key);
-    return { decrypted, total };
-  }, [fileId, decryptChunk]);
+     const decrypted = await decryptChunk(encryptedData, iv, auth_tag, key);
+     return { decrypted, total: total_parts };
+   }, [fileId, decryptChunk]);
 
   // Append to MediaSource buffer with queue handling
   const appendToSourceBuffer = useCallback((sourceBuffer, data) => {
@@ -175,18 +186,22 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
 
         if (cancelled) return;
 
-        // Fetch manifest
-        setLoadingStage('Fetching file info...');
-        const manifestRes = await fetch(`/api/stream/${fileId}/manifest`, {
-          signal: abortControllerRef.current.signal
-        });
+        // Fetch file parts metadata
+         setLoadingStage('Fetching file info...');
+         const partsRes = await fetch(`/api/files/${encodeURIComponent(fileId)}/parts`, {
+           signal: abortControllerRef.current.signal
+         });
 
-        if (!manifestRes.ok) {
-          throw new Error('Failed to fetch file manifest');
-        }
+         if (!partsRes.ok) {
+           throw new Error('Failed to fetch file parts');
+         }
 
-        const manifest = await manifestRes.json();
-        setTotalChunks(manifest.totalChunks);
+         const partsData = await partsRes.json();
+         const totalChunks = partsData.parts.length;
+         setTotalChunks(totalChunks);
+         
+         // Create manifest-like object for compatibility
+         const manifest = { totalChunks, parts: partsData.parts };
 
         if (cancelled) return;
 

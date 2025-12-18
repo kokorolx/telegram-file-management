@@ -3,6 +3,67 @@ import { useEffect, useState } from 'react';
 import { useEncryption } from '../contexts/EncryptionContext';
 import { blobCache } from '@/lib/secureImageCache';
 import VideoPlayer from './VideoPlayer';
+import { deriveEncryptionKeyBrowser, fetchAndDecryptFullFile, fetchFilePartMetadata } from '@/lib/clientDecryption';
+
+// Helper function to get file icon based on mime type
+function getFileIcon(mimeType, filename) {
+  if (!mimeType && !filename) return '📄';
+  
+  const type = (mimeType || '').toLowerCase();
+  const name = (filename || '').toLowerCase();
+  
+  // Documents
+  if (type.includes('word') || name.endsWith('.doc') || name.endsWith('.docx')) return '📝';
+  if (type.includes('spreadsheet') || type.includes('excel') || name.endsWith('.xls') || name.endsWith('.xlsx') || name.endsWith('.csv')) return '📊';
+  if (type.includes('presentation') || name.endsWith('.ppt') || name.endsWith('.pptx')) return '🎯';
+  
+  // Archives
+  if (type.includes('zip') || type.includes('rar') || type.includes('7z') || type.includes('tar') || type.includes('gzip')) return '📦';
+  if (name.endsWith('.zip') || name.endsWith('.rar') || name.endsWith('.7z') || name.endsWith('.tar') || name.endsWith('.gz')) return '📦';
+  
+  // Code
+  if (type.includes('javascript') || type.includes('typescript') || name.endsWith('.js') || name.endsWith('.ts') || name.endsWith('.jsx') || name.endsWith('.tsx')) return '💻';
+  if (type.includes('python') || name.endsWith('.py')) return '🐍';
+  if (type.includes('json') || name.endsWith('.json')) return '📋';
+  if (type.includes('xml') || name.endsWith('.xml')) return '🏷️';
+  if (type.includes('css') || name.endsWith('.css')) return '🎨';
+  if (type.includes('html') || name.endsWith('.html')) return '🌐';
+  
+  // Text
+  if (type.includes('text') || type.includes('plain') || name.endsWith('.txt') || name.endsWith('.md') || name.endsWith('.markdown')) return '📄';
+  
+  // Audio (fallback)
+  if (type.includes('audio')) return '🎵';
+  
+  // Default
+  return '📄';
+}
+
+// Helper function to get readable file type name
+function getFileTypeName(mimeTypeOrFilename) {
+  const input = (mimeTypeOrFilename || '').toLowerCase();
+  
+  if (input.includes('word') || input.endsWith('.doc') || input.endsWith('.docx')) return 'Word Document';
+  if (input.includes('spreadsheet') || input.includes('excel') || input.endsWith('.xls') || input.endsWith('.xlsx') || input.endsWith('.csv')) return 'Spreadsheet';
+  if (input.includes('presentation') || input.endsWith('.ppt') || input.endsWith('.pptx')) return 'Presentation';
+  if (input.includes('zip')) return 'ZIP Archive';
+  if (input.includes('rar')) return 'RAR Archive';
+  if (input.includes('7z')) return '7Z Archive';
+  if (input.includes('tar') || input.includes('gzip')) return 'TAR Archive';
+  if (input.includes('javascript') || input.endsWith('.js') || input.endsWith('.jsx')) return 'JavaScript File';
+  if (input.includes('typescript') || input.endsWith('.ts') || input.endsWith('.tsx')) return 'TypeScript File';
+  if (input.includes('python') || input.endsWith('.py')) return 'Python File';
+  if (input.includes('json')) return 'JSON File';
+  if (input.includes('xml')) return 'XML File';
+  if (input.includes('css')) return 'CSS File';
+  if (input.includes('html')) return 'HTML File';
+  if (input.includes('text') || input.includes('plain') || input.endsWith('.txt') || input.endsWith('.md')) return 'Text File';
+  if (input.endsWith('.markdown')) return 'Markdown File';
+  if (input.includes('audio')) return 'Audio File';
+  if (input.includes('application')) return 'Application File';
+  
+  return 'File';
+}
 
 export default function PreviewModal({ file, isOpen, onClose }) {
   const { masterPassword, isUnlocked, unlock } = useEncryption();
@@ -56,35 +117,37 @@ export default function PreviewModal({ file, isOpen, onClose }) {
                 return;
             }
 
-            // For audio: Use blob-based loading
+            // For audio: Decrypt in browser using client-side decryption
             if (file?.mime_type?.startsWith('audio/')) {
-                const streamUrl = `/api/stream?file_id=${file.id}`;
-                const xhr = new XMLHttpRequest();
-                xhr.open('GET', streamUrl);
-                xhr.setRequestHeader('Authorization', `Bearer ${password}`);
-                xhr.responseType = 'blob';
-
-                xhr.onload = () => {
-                    if (xhr.status === 200) {
-                        const blobUrl = URL.createObjectURL(xhr.response);
-                        setSecureSrc(blobUrl);
+                try {
+                    // Check cache first
+                    if (blobCache.has(file.id)) {
+                        setSecureSrc(blobCache.get(file.id).url);
                         setLoading(false);
-                    } else {
-                        setError('Failed to load audio');
-                        setLoading(false);
+                        return;
                     }
-                };
 
-                xhr.onerror = () => {
-                    setError('Failed to load audio');
-                    setLoading(false);
-                };
+                    // Derive encryption key in browser
+                    const key = await deriveEncryptionKeyBrowser(password);
 
-                xhr.send();
+                    // Fetch part metadata
+                    const partMetadata = await fetchFilePartMetadata(file.id);
+
+                    // Decrypt entire audio file in browser
+                    const decryptedBlob = await fetchAndDecryptFullFile(file.id, key, partMetadata);
+
+                    // Create blob URL and cache
+                    const url = URL.createObjectURL(decryptedBlob);
+                    blobCache.set(file.id, { url, timestamp: Date.now() });
+                    setSecureSrc(url);
+                } catch (err) {
+                    setError(`Audio decryption failed: ${err.message}`);
+                }
+                setLoading(false);
                 return;
             }
 
-            // For other file types: Load into memory (images, documents, etc.)
+            // For other file types: Decrypt in browser (images, PDFs, documents, etc.)
             // 1. Check Cache First
             if (blobCache.has(file.id)) {
                 setSecureSrc(blobCache.get(file.id).url);
@@ -92,21 +155,21 @@ export default function PreviewModal({ file, isOpen, onClose }) {
                 return;
             }
 
-            const res = await fetch('/api/download', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ file_id: file.id, master_password: password })
-            });
+            // 2. Derive encryption key in BROWSER from password
+            const key = await deriveEncryptionKeyBrowser(password);
 
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error(data.error || "Failed to load secure preview");
-            }
+            // 3. Fetch unencrypted part metadata
+            const partMetadata = await fetchFilePartMetadata(file.id);
 
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
+            // 4. Decrypt entire file in BROWSER (chunks fetched encrypted, decrypted locally)
+            const decryptedBlob = await fetchAndDecryptFullFile(file.id, key, partMetadata);
 
-            // 2. Save to Cache
+            // 5. Force correct MIME type for PDFs
+            const mimeType = file.mime_type?.includes('pdf') ? 'application/pdf' : decryptedBlob.type;
+            const finalBlob = new Blob([decryptedBlob], { type: mimeType });
+            const url = URL.createObjectURL(finalBlob);
+
+            // 6. Save to Cache
             blobCache.set(file.id, { url, timestamp: Date.now() });
 
             setSecureSrc(url);
@@ -225,13 +288,31 @@ export default function PreviewModal({ file, isOpen, onClose }) {
                     </div>
                 )}
 
-                {!isImage && !isVideo && !isAudio && (
-                    <div className="text-center p-8 bg-white rounded-xl shadow-sm">
-                    <p className="text-6xl mb-4">📄</p>
-                    <p className="text-gray-600 mb-4 font-medium">
-                        Preview not available for this file type
-                    </p>
-                    {/* For downloading context, we already have the URL or can trigger download via parent */}
+                {file.mime_type?.includes('pdf') && (
+                    <div className="w-full h-[75vh]">
+                        <iframe
+                            src={secureSrc}
+                            className="w-full h-full rounded shadow-sm border border-gray-200"
+                            title={file.original_filename}
+                        />
+                    </div>
+                )}
+
+                {!isImage && !isVideo && !isAudio && !file.mime_type?.includes('pdf') && (
+                    <div className="text-center p-8 bg-white rounded-xl shadow-sm w-full">
+                        {/* File Type Icon Thumbnail */}
+                        <div className="w-32 h-32 mx-auto mb-6 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-2xl flex items-center justify-center shadow-md">
+                            <div className="text-6xl">{getFileIcon(file.mime_type, file.original_filename)}</div>
+                        </div>
+                        <p className="text-gray-600 mb-2 font-medium">
+                            {file.mime_type ? getFileTypeName(file.mime_type) : getFileTypeName(file.original_filename)}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                            Preview not available for this file type
+                        </p>
+                        <p className="text-xs text-gray-400 mt-2">
+                            {file.original_filename}
+                        </p>
                     </div>
                 )}
                </>
