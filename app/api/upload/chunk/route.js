@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { requireAuth } from '@/lib/auth';
 import { getFileById, createFile, createFilePart } from '@/lib/db';
 import { sendFileToTelegram } from '@/lib/telegram';
+import { getFileExtension, getMimeType } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,6 +51,13 @@ export async function POST(request) {
     const auth = await requireAuth(request);
     if (!auth.authenticated) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Get user ID from auth (required for file ownership)
+    const userId = auth.user?.id;
+    if (!userId) {
+      console.error('[UPLOAD/CHUNK] User ID missing from auth');
+      return NextResponse.json({ error: 'User identification failed' }, { status: 401 });
     }
 
     // Parse request
@@ -115,17 +123,30 @@ export async function POST(request) {
 
     if (part_number === 1) {
       // First chunk - create file metadata
+      const fileExt = getFileExtension(original_filename);
+      const mimeType = mime_type || getMimeType(fileExt) || 'application/octet-stream';
+      
+      if (!userId) {
+        console.error('[UPLOAD/CHUNK] Cannot create file without user_id');
+        return NextResponse.json({ 
+          error: 'User identification required. Please log in and try again.' 
+        }, { status: 401 });
+      }
+      
       fileRecord = await createFile({
         id: file_id,
+        user_id: userId,
+        folder_id: folder_id || null,
+        telegram_file_id: null,
         original_filename,
         file_size: decryptedSize * total_parts, // Approximate (will update when all chunks received)
-        mime_type: mime_type || 'application/octet-stream',
+        file_type: fileExt,
+        mime_type: mimeType,
         is_encrypted: true,
-        encryption_algo: 'AES-256-GCM',
-        folder_id: folder_id || null
+        encryption_algo: 'AES-256-GCM'
       });
 
-      console.log(`📁 Created encrypted file: ${file_id} (${original_filename})`);
+      console.log(`📁 Created encrypted file: ${file_id} (${original_filename}) for user ${userId}`);
     }
 
     if (!fileRecord) {

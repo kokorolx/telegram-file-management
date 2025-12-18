@@ -102,7 +102,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
    const fetchAndDecryptChunk = useCallback(async (chunkNum, key, signal) => {
      // Fetch encrypted chunk metadata from server (NEW endpoint)
      const response = await fetch(
-       `/api/chunk?file_id=${encodeURIComponent(fileId)}&part=${chunkNum}`,
+       `/api/chunk/${encodeURIComponent(fileId)}/${chunkNum}`,
        { signal }
      );
 

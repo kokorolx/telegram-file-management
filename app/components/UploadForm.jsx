@@ -16,6 +16,7 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
   const [pendingFileForUpload, setPendingFileForUpload] = useState(null);
   const [customFileName, setCustomFileName] = useState('');
   const fileInputRef = useRef(null);
+  const abortControllersRef = useRef(new Map()); // Track abort controllers per file
 
   // Handle external files (e.g. from global DropZone)
   useEffect(() => {
@@ -75,32 +76,59 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
     }
   };
 
-  const uploadFile = async (fileItem, password) => {
-    const startTime = Date.now();
-    console.log(`[UPLOAD] ${fileItem.id} - Starting upload: ${fileItem.file.name}`);
+  const cancelUpload = async (fileId) => {
+    console.log(`[UPLOAD] ${fileId} - Cancel requested`);
+    
+    // Abort any ongoing fetch requests
+    const abortController = abortControllersRef.current.get(fileId);
+    if (abortController) {
+      abortController.abort();
+      abortControllersRef.current.delete(fileId);
+    }
 
-    // Update status to uploading
-    updateFileStatus(fileItem.id, 'uploading', 0);
+    // Remove from queue
+    setQueue(prev => prev.filter(f => f.id !== fileId));
+    console.log(`[UPLOAD] ${fileId} - Cancelled and removed from queue`);
+  };
+
+  const uploadFile = async (fileItem, password) => {
+     const startTime = Date.now();
+     console.log(`[UPLOAD] ${fileItem.id} - Starting upload: ${fileItem.file.name}`);
+     console.log(`[UPLOAD] ${fileItem.id} - Password provided: ${password ? 'YES' : 'NO'}`);
+     console.log(`[UPLOAD] ${fileItem.id} - isEncrypted: ${isEncrypted}`);
+
+     // Create abort controller for this upload
+     const abortController = new AbortController();
+     abortControllersRef.current.set(fileItem.id, abortController);
+
+     // Update status to uploading
+     updateFileStatus(fileItem.id, 'uploading', 0);
 
     try {
       // If encrypted upload, use browser-side encryption
-      if (isEncrypted) {
+      if (isEncrypted && password) {
         console.log(`[UPLOAD] ${fileItem.id} - Starting encrypted upload (browser-side encryption)`);
         
-        await encryptFileChunks(
-          fileItem.file,
-          password,
-          (partNumber, totalParts, stage) => {
-            // Calculate progress as percentage
-            const progress = (partNumber / totalParts) * 100;
-            updateFileStatus(fileItem.id, 'uploading', progress, null, stage);
-            console.log(`[UPLOAD] ${fileItem.id} - ${stage} (${partNumber}/${totalParts})`);
-          },
-          currentFolderId
-        );
+        try {
+          await encryptFileChunks(
+            fileItem.file,
+            password,
+            (partNumber, totalParts, stage) => {
+              // Calculate progress as percentage
+              const progress = (partNumber / totalParts) * 100;
+              updateFileStatus(fileItem.id, 'uploading', progress, null, stage);
+              console.log(`[UPLOAD] ${fileItem.id} - ${stage} (${partNumber}/${totalParts})`);
+            },
+            currentFolderId,
+            abortController.signal
+          );
 
-        console.log(`[UPLOAD] ${fileItem.id} - ✓ Encrypted upload successful`);
-        updateFileStatus(fileItem.id, 'success', 100);
+          console.log(`[UPLOAD] ${fileItem.id} - ✓ Encrypted upload successful`);
+          updateFileStatus(fileItem.id, 'success', 100);
+        } catch (encErr) {
+          console.error(`[UPLOAD] ${fileItem.id} - Encryption failed:`, encErr);
+          throw new Error(`Encryption failed: ${encErr.message}`);
+        }
       } else {
         // Old unencrypted upload path
         console.log(`[UPLOAD] ${fileItem.id} - Starting unencrypted upload`);
@@ -156,8 +184,14 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
         setQueue(prev => prev.filter(f => f.id !== fileItem.id));
       }, 5000);
     } catch (err) {
-      console.error(`[UPLOAD] ${fileItem.id} - FAILED:`, err.message);
-      updateFileStatus(fileItem.id, 'error', 0, err.message);
+      // Check if it was a user cancellation
+      if (err.message.includes('cancelled') || err.message.includes('Abort')) {
+        console.log(`[UPLOAD] ${fileItem.id} - Cancelled by user`);
+        // Already removed from queue by cancelUpload
+      } else {
+        console.error(`[UPLOAD] ${fileItem.id} - FAILED:`, err.message);
+        updateFileStatus(fileItem.id, 'error', 0, err.message);
+      }
     }
   };
 
@@ -167,21 +201,23 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
       const pendingFile = queue.find(f => f.status === 'pending');
       if (!pendingFile) return;
 
-      // Show password prompt for encrypted uploads
-      if (isEncrypted) {
+      // All files must be encrypted
+      if (isUnlocked && masterPassword) {
+        // User already unlocked - use the master password automatically
+        console.log(`[UPLOAD] User unlocked - using master password automatically`);
+        uploadFile(pendingFile, masterPassword);
+      } else {
+        // User not unlocked - show password prompt to unlock
+        console.log(`[UPLOAD] User not unlocked - showing password prompt`);
         setPendingFileForUpload(pendingFile);
         setShowPasswordPrompt(true);
-        return;
       }
-
-      // For unencrypted uploads, proceed without password prompt
-      uploadFile(pendingFile, '');
     };
 
     if (queue.some(f => f.status === 'pending') && !queue.some(f => f.status === 'uploading')) {
       processQueue();
     }
-  }, [queue, currentFolderId, onFileUploaded, isEncrypted, isUnlocked, masterPassword, unlock]);
+  }, [queue, currentFolderId, onFileUploaded, isUnlocked, masterPassword, unlock]);
 
   const updateFileStatus = (id, status, progress, error = null, stage = '') => {
     setQueue(prev => prev.map(f => {
@@ -302,20 +338,30 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-center mb-1">
-                    <p className="text-sm font-medium text-gray-700 truncate">{item.file.name}</p>
-                    <span className={`text-xs font-semibold ${
-                      item.status === 'success' ? 'text-green-600' :
-                      item.status === 'error' ? 'text-red-600' :
-                      item.status === 'encrypting' ? 'text-amber-600' :
-                      'text-blue-600'
-                    }`}>
-                      {item.status === 'success' ? 'Completed' :
-                       item.status === 'error' ? 'Failed' :
-                       item.status === 'encrypting' ? 'Encrypting...' :
-                       item.status === 'uploading' ? 'Uploading...' : 'Waiting for password...'}
-                    </span>
-                  </div>
+                   <div className="flex justify-between items-center mb-1">
+                     <p className="text-sm font-medium text-gray-700 truncate">{item.file.name}</p>
+                     <div className="flex items-center gap-2">
+                       <span className={`text-xs font-semibold ${
+                         item.status === 'success' ? 'text-green-600' :
+                         item.status === 'error' ? 'text-red-600' :
+                         item.status === 'encrypting' ? 'text-amber-600' :
+                         'text-blue-600'
+                       }`}>
+                         {item.status === 'success' ? 'Completed' :
+                          item.status === 'error' ? 'Failed' :
+                          item.status === 'encrypting' ? 'Encrypting...' :
+                          item.status === 'uploading' ? 'Uploading...' : 'Waiting for password...'}
+                       </span>
+                       {(item.status === 'uploading' || item.status === 'encrypting' || item.status === 'pending') && (
+                         <button
+                           onClick={() => cancelUpload(item.id)}
+                           className="px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 rounded transition-colors"
+                         >
+                           Cancel
+                         </button>
+                       )}
+                     </div>
+                   </div>
 
                   {/* Progress Bar */}
                   <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">

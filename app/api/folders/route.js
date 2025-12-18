@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { createFolder, getFolders, getFoldersByParent, getAllFolders } from '@/lib/db';
+import { getUserFromRequest } from '@/lib/apiAuth';
 
 export async function GET(request) {
   try {
@@ -8,15 +9,24 @@ export async function GET(request) {
     const parentId = searchParams.get('parent_id');
     const all = searchParams.get('all');
 
+    // Get authenticated user
+    const user = getUserFromRequest(request);
+    if (!user || !user.id) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
     let folders;
     if (all === 'true') {
-      folders = await getAllFolders();
+      folders = await getAllFolders(user.id);
     } else if (parentId) {
       // Get subfolders for specific parent
-      folders = await getFoldersByParent(parentId);
+      folders = await getFoldersByParent(user.id, parentId);
     } else {
-      // Get root folders (parent_id is NULL)
-      folders = await getFolders();
+      // Get root folders (parent_id is NULL) for current user
+      folders = await getFolders(user.id);
     }
 
     return NextResponse.json({
@@ -36,6 +46,15 @@ export async function POST(request) {
   try {
     const { name, parent_id } = await request.json();
 
+    // Get authenticated user
+    const user = getUserFromRequest(request);
+    if (!user || !user.id) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
     if (!name || !name.trim()) {
       return NextResponse.json(
         { success: false, error: 'Folder name is required' },
@@ -52,7 +71,7 @@ export async function POST(request) {
     }
 
     const folderId = uuidv4();
-    const folder = await createFolder(folderId, name.trim(), parent_id);
+    const folder = await createFolder(folderId, user.id, name.trim(), parent_id);
 
     return NextResponse.json({
       success: true,

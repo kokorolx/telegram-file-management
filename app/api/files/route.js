@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllFiles, getFilesByFolder, getFolderByPath, getFolderById } from '@/lib/db';
+import { getUserFromRequest } from '@/lib/apiAuth';
 
 export async function GET(request) {
   try {
@@ -10,6 +11,15 @@ export async function GET(request) {
     let folderId = searchParams.get('folder_id') || null;
     const usePath = searchParams.get('path');
 
+    // Get authenticated user
+    const user = getUserFromRequest(request);
+    if (!user || !user.id) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
     let currentFolder = null;
 
     // Resolve path if provided
@@ -17,7 +27,7 @@ export async function GET(request) {
         if (usePath === '/') {
             folderId = null;
         } else {
-            const folder = await getFolderByPath(usePath);
+            const folder = await getFolderByPath(user.id, usePath);
             if (folder) {
                 folderId = folder.id;
                 currentFolder = folder;
@@ -28,14 +38,17 @@ export async function GET(request) {
         }
     } else if (folderId) {
         currentFolder = await getFolderById(folderId);
+        // Verify folder belongs to user
+        if (currentFolder && currentFolder.user_id !== user.id) {
+          return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+        }
     }
 
     let files;
 
-    // If search is provided, we search globally (or we could restrict to folder, but global is usually better for "Search")
-    // CURRENT BEHAVIOR: Global Search
+    // If search is provided, we search in user's files only
     if (search.trim()) {
-      const allFiles = await getAllFiles();
+      const allFiles = await getAllFiles(user.id);
       const searchLower = search.toLowerCase();
       files = allFiles.filter(
         (file) =>
@@ -44,8 +57,8 @@ export async function GET(request) {
           file.tags?.toLowerCase().includes(searchLower)
       );
     } else {
-      // Fetch files for specific folder (or root if null)
-      files = await getFilesByFolder(folderId);
+      // Fetch files for specific folder (or root if null) for current user
+      files = await getFilesByFolder(user.id, folderId);
     }
 
     // Calculate pagination

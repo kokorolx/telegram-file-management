@@ -5,6 +5,7 @@ import { sendFileToTelegram } from '@/lib/telegram';
 import { getFileExtension, getMimeType, validateFile } from '@/lib/utils';
 import { processEncryptedUpload } from '@/lib/fileService';
 import { validateMasterPassword } from '@/lib/authService';
+import { getUserFromRequest } from '@/lib/apiAuth';
 
 export async function POST(request) {
   const startTime = Date.now();
@@ -13,6 +14,18 @@ export async function POST(request) {
   console.log(`[API/UPLOAD] ${requestId} - New upload request received`);
   
   try {
+     // Get authenticated user
+     const user = getUserFromRequest(request);
+     console.log(`[API/UPLOAD] ${requestId} - User from request:`, user);
+     if (!user || !user.id) {
+       console.error(`[API/UPLOAD] ${requestId} - Not authenticated`);
+       return NextResponse.json(
+         { success: false, error: 'Authentication required' },
+         { status: 401 }
+       );
+     }
+     console.log(`[API/UPLOAD] ${requestId} - User ID: ${user.id}`);
+  
      const formData = await request.formData();
      const file = formData.get('file');
      const description = formData.get('description') || null;
@@ -71,7 +84,7 @@ export async function POST(request) {
        console.log(`[API/UPLOAD] ${requestId} - Starting background processing (FFmpeg optimize + encrypt + chunk)...`);
        console.log(`[API/UPLOAD] ${requestId} - File ID: ${fileId}`);
        
-       processEncryptedUpload(fileBuffer, masterPassword, folderId, description, tags, fileId, finalFilename)
+       processEncryptedUpload(fileBuffer, masterPassword, user.id, folderId, description, tags, fileId, finalFilename)
          .then(() => {
            const duration = ((Date.now() - startTime) / 1000).toFixed(1);
            console.log(`[API/UPLOAD] ${requestId} - ✓ Processing complete in ${duration}s`);
@@ -90,15 +103,10 @@ export async function POST(request) {
          }
        });
     } else {
-        console.error(`[API/UPLOAD] ${requestId} - Master password required`);
-        return NextResponse.json({ success: false, error: 'Master password required for secure upload' }, { status: 400 });
+      // Master password required for all uploads
+      console.error(`[API/UPLOAD] ${requestId} - Master password required`);
+      return NextResponse.json({ success: false, error: 'Master password required' }, { status: 400 });
     }
-
-    // Legacy/Unencrypted Flow is disabled to enforce privacy preference
-    /*
-     Legacy code removed for clarity.
-     If we need to restore unencrypted uploads, uncomment lines below or reverting commit.
-    */
   } catch (error) {
     console.error(`[API/UPLOAD] ${requestId} - ✗ UPLOAD FAILED:`, error.message);
     console.error(`[API/UPLOAD] ${requestId} - Stack:`, error.stack);

@@ -14,10 +14,12 @@ import LoginDialog from '../components/LoginDialog';
 import ContextMenu from '../components/ContextMenu';
 import { FileListSkeletonGrid, FileListSkeletonRow } from '../components/SkeletonLoader';
 import Link from 'next/link';
+import { useUser } from '../contexts/UserContext';
 
 export default function Home({ params }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user, logout, checkAuth } = useUser();
 
   // Resolve current path from params (Next.js 13+ app dir)
   // params.folderPath is array: ['folder', 'sub']
@@ -212,10 +214,16 @@ export default function Home({ params }) {
     setRefreshTrigger(prev => prev + 1);
   };
 
-  const handleLoginSuccess = () => {
-      setShowLogin(false);
-      setRefreshTrigger(prev => prev + 1);
-  };
+  const handleLoginSuccess = async () => {
+       setShowLogin(false);
+       await checkAuth(); // Refresh user state from cookie
+       setRefreshTrigger(prev => prev + 1);
+   };
+
+   const handleLogout = async () => {
+     await logout();
+     router.push('/');
+   };
 
   const handleContextMenu = (e, item, type) => {
     e.preventDefault();
@@ -340,9 +348,33 @@ export default function Home({ params }) {
             <span className="text-2xl">🔒</span>
             <h1 className="text-lg font-bold text-slate-900">Telegram Files Manager</h1>
           </div>
-          <Link href="/landing" className="text-sm font-medium text-slate-600 hover:text-blue-600 transition">
-            Learn More
-          </Link>
+          <div className="flex items-center gap-4">
+            {user ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-slate-600">👤 {user.username}</span>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                >
+                  Logout
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setShowLogin(true)}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                >
+                  Login
+                </button>
+              </>
+            )}
+            <Link href="/landing" className="text-sm font-medium text-slate-600 hover:text-blue-600 transition">
+              Learn More
+            </Link>
+          </div>
         </div>
       </div>
 

@@ -1,69 +1,47 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { validateMasterPassword, loginUser } from '@/lib/authService';
-import { getSettings } from '@/lib/db';
+import { loginUser } from '@/lib/authService';
 
 export async function POST(request) {
   try {
-    const { password, username } = await request.json();
-    const SETUP_TOKEN = process.env.SETUP_TOKEN || 'default-setup-token';
+    const { username, password } = await request.json();
 
-    if (!password) {
+    if (!username || !password) {
       return NextResponse.json(
-        { success: false, error: 'Password is required' },
+        { success: false, error: 'Username and password are required' },
         { status: 400 }
       );
     }
 
-    // 1. Check against Setup Token (Admin)
-    if (password === SETUP_TOKEN && !username) {
-        cookies().set('session_token', 'admin-session', {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            path: '/',
-            maxAge: 60 * 60 * 24 * 7 // 1 week
-        });
-        return NextResponse.json({ success: true, mode: 'admin' });
+    // Authenticate user with username/password
+    const user = await loginUser(username, password);
+    
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid credentials' },
+        { status: 401 }
+      );
     }
 
-    // 2. User Login (Username + Password)
-    if (username) {
-        const user = await loginUser(username, password);
-        if (user) {
-            cookies().set('session_token', `user:${user.id}`, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
-                path: '/',
-                maxAge: 60 * 60 * 24 * 7
-            });
-            return NextResponse.json({ success: true, mode: 'user', user });
-        } else {
-             return NextResponse.json({ success: false, error: 'Invalid credentials' }, { status: 401 });
-        }
-    }
+    // Set session cookie with user info
+    const sessionData = JSON.stringify({ id: user.id, username: user.username });
+    const encoded = Buffer.from(sessionData).toString('base64');
+    
+    cookies().set('session_user', encoded, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7 // 1 week
+    });
 
-    // 3. Fallback: Master Password Login (Legacy/Root)
-    const settings = await getSettings();
-    if (settings?.master_password_hash) {
-        const isValid = await validateMasterPassword(password);
-        if (isValid) {
-            cookies().set('session_token', 'master-session', {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
-                path: '/',
-                maxAge: 60 * 60 * 24 * 7
-            });
-            return NextResponse.json({ success: true, mode: 'master' });
-        }
-    }
-
-    return NextResponse.json(
-      { success: false, error: 'Invalid password or credentials' },
-      { status: 401 }
-    );
+    return NextResponse.json({
+      success: true,
+      user: {
+        id: user.id,
+        username: user.username
+      }
+    });
 
   } catch (error) {
     console.error('Login error:', error);
