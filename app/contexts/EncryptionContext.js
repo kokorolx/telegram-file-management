@@ -3,14 +3,24 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { clearSecureCache } from '@/lib/secureImageCache';
 import { deriveEncryptionKeyBrowser } from '@/lib/clientDecryption';
+import { useUser } from './UserContext';
 
 const EncryptionContext = createContext();
 
 export function EncryptionProvider({ children }) {
+  const { user } = useUser();
   const [masterPassword, setMasterPassword] = useState(null);
   const [encryptionKey, setEncryptionKey] = useState(null);
   const [salt, setSalt] = useState(null);
   const [isUnlocked, setIsUnlocked] = useState(false);
+
+  // Auto-lock on logout
+  useEffect(() => {
+    if (!user && isUnlocked) {
+      console.log('User logged out, locking vault and clearing cache...');
+      lock();
+    }
+  }, [user]);
 
   // ... beforeunload effect ...
   useEffect(() => {

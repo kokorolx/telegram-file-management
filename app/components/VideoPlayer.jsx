@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useEncryption } from '../contexts/EncryptionContext';
 import { decryptChunkBrowser } from '@/lib/clientDecryption';
+import { blobCache } from '@/lib/secureImageCache';
 
 /**
  * Secure Video Player with Browser-Side Decryption (CDN-Friendly)
@@ -321,7 +322,8 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
       console.log(`[Video] Blob URL created: ${url}`);
 
       setVideoSrc(url);
-      console.log(`[Video] Setting videoSrc state to: ${url}`);
+      blobCache.set(fileId, { url, timestamp: Date.now() });
+      console.log(`[Video] Setting videoSrc and caching: ${url}`);
 
       setIsLoading(false);
       setLoadingStage('Ready');
