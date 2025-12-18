@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { saveSettings, getSettings } from '@/lib/db';
+import { saveSettings, getSettings, updateUserMasterPasswordHash, getUserById } from '@/lib/db';
+import { getUserFromRequest } from '@/lib/apiAuth';
 
 const SETUP_TOKEN = process.env.SETUP_TOKEN || 'default-setup-token';
 
@@ -54,18 +55,25 @@ export async function POST(request) {
          );
     }
 
+    const user = getUserFromRequest(request);
+    if (!user || !user.id) {
+        return NextResponse.json(
+            { success: false, error: 'Authentication required to set master password.' },
+            { status: 401 }
+        );
+    }
+
     // Save settings
     await saveSettings(finalBotToken, finalUserId);
 
-    // Save Master Password
-    const { setMasterPassword } = await import('@/lib/authService');
-    const { updateMasterPasswordHash } = await import('@/lib/db');
+    // Generate a unique salt for this user's encryption
+    const { randomBytes } = await import('crypto');
+    const encryptionSalt = randomBytes(16).toString('hex');
 
-    // Note: setMasterPassword in authService currently just hashes, it doesn't save to DB itself (based on my read).
-    // Let's verify authService content from previous turn.
-    // Yes, it returns hash.
+    // Save Master Password to USER
+    const { setMasterPassword } = await import('@/lib/authService');
     const hash = await setMasterPassword(masterPassword);
-    await updateMasterPasswordHash(hash);
+    await updateUserMasterPasswordHash(user.id, hash, encryptionSalt);
 
     return NextResponse.json({
       success: true,
@@ -84,11 +92,21 @@ export async function GET(request) {
   try {
     // Check if setup is complete (don't expose actual values)
     const settings = await getSettings();
+    const user = getUserFromRequest(request);
+
+    let hasMasterPassword = false;
+    let encryptionSalt = null;
+    if (user?.id) {
+        const userRecord = await getUserById(user.id);
+        hasMasterPassword = !!userRecord?.master_password_hash;
+        encryptionSalt = userRecord?.encryption_salt;
+    }
 
     return NextResponse.json({
       success: true,
       setupComplete: !!settings?.telegram_bot_token && !!settings?.telegram_user_id,
-      hasMasterPassword: !!settings?.master_password_hash
+      hasMasterPassword: hasMasterPassword,
+      encryptionSalt: encryptionSalt
     });
   } catch (error) {
     console.error('Settings get error:', error);
@@ -103,10 +121,19 @@ export async function PUT(request) {
   try {
     const { masterPassword, setupToken } = await request.json();
 
-    // Validate setup token
-    if (setupToken !== SETUP_TOKEN) {
+    const user = getUserFromRequest(request);
+    if (!user || !user.id) {
+        return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    }
+
+    // Check if user already has a master password
+    const userRecord = await getUserById(user.id);
+    const hasExistingMaster = !!userRecord?.master_password_hash;
+
+    // Validate setup token ONLY if they are trying to CHANGE an existing master password
+    if (hasExistingMaster && setupToken !== SETUP_TOKEN) {
       return NextResponse.json(
-        { success: false, error: 'Invalid setup token' },
+        { success: false, error: 'Setup token is required to update an existing master password' },
         { status: 401 }
       );
     }
@@ -119,7 +146,6 @@ export async function PUT(request) {
     }
 
     // Hash and save
-    const { setMasterPassword } = await import('@/lib/authService');
     // Actually authService.setMasterPassword currently returns hash, doesn't save?
     // Let's check authService.js again.
     // It returns hash. We need to save it.
@@ -140,11 +166,17 @@ export async function PUT(request) {
     */
     // It accepts botToken etc which are unused.
 
-    // Correct usage:
+    // Correct usage handled above (user already fetched)
+    // Move on to generation...
+
+    // Generate a unique salt for this user's encryption
+    const { randomBytes } = await import('crypto');
+    const encryptionSalt = randomBytes(16).toString('hex');
+
+    const { setMasterPassword } = await import('@/lib/authService');
     const hash = await setMasterPassword(masterPassword);
 
-    const { updateMasterPasswordHash } = await import('@/lib/db');
-    await updateMasterPasswordHash(hash);
+    await updateUserMasterPasswordHash(user.id, hash, encryptionSalt);
 
     return NextResponse.json({
       success: true,

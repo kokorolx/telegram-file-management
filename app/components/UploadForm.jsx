@@ -10,13 +10,14 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
   const { masterPassword, isUnlocked, unlock } = useEncryption();
   const [queue, setQueue] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [isEncrypted, setIsEncrypted] = useState(true); // Default to true
+  const isEncrypted = true; // Always use browser-side encryption
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
   const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
   const [pendingFileForUpload, setPendingFileForUpload] = useState(null);
   const [customFileName, setCustomFileName] = useState('');
   const fileInputRef = useRef(null);
   const abortControllersRef = useRef(new Map()); // Track abort controllers per file
+  const MAX_CONCURRENT_FILES = 3;
 
   // Handle external files (e.g. from global DropZone)
   useEffect(() => {
@@ -78,7 +79,7 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
 
   const cancelUpload = async (fileId) => {
     console.log(`[UPLOAD] ${fileId} - Cancel requested`);
-    
+
     // Abort any ongoing fetch requests
     const abortController = abortControllersRef.current.get(fileId);
     if (abortController) {
@@ -106,9 +107,6 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
 
     try {
       // If encrypted upload, use browser-side encryption
-      if (isEncrypted && password) {
-        console.log(`[UPLOAD] ${fileItem.id} - Starting encrypted upload (browser-side encryption)`);
-        
         try {
           await encryptFileChunks(
             fileItem.file,
@@ -129,53 +127,6 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
           console.error(`[UPLOAD] ${fileItem.id} - Encryption failed:`, encErr);
           throw new Error(`Encryption failed: ${encErr.message}`);
         }
-      } else {
-        // Old unencrypted upload path
-        console.log(`[UPLOAD] ${fileItem.id} - Starting unencrypted upload`);
-        
-        const formData = new FormData();
-        formData.append('file', fileItem.file);
-        if (currentFolderId) formData.append('folder_id', currentFolderId);
-        if (customFileName) {
-          formData.append('filename', customFileName);
-        }
-
-        console.log(`[UPLOAD] ${fileItem.id} - Sending to server...`);
-
-        // Simulate progress during upload
-        const progressInterval = setInterval(() => {
-          const progress = Math.random() * 30 + 50;
-          updateFileStatus(fileItem.id, 'uploading', progress);
-          console.log(`[UPLOAD] ${fileItem.id} - Progress: ${progress.toFixed(0)}%`);
-        }, 500);
-
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-
-        clearInterval(progressInterval);
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          console.error(`[UPLOAD] ${fileItem.id} - Server error:`, data.error);
-          throw new Error(data.error || 'Upload failed');
-        }
-
-        console.log(`[UPLOAD] ${fileItem.id} - ✓ Upload successful, server processing...`);
-        console.log(`[UPLOAD] ${fileItem.id} - Response:`, data);
-
-        // File uploaded, server is now processing
-        updateFileStatus(fileItem.id, 'encrypting', 100);
-
-        // Show success after server finishes processing
-        setTimeout(() => {
-          const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-          console.log(`[UPLOAD] ${fileItem.id} - ✓ COMPLETED in ${duration}s`);
-          updateFileStatus(fileItem.id, 'success', 100);
-        }, 2000);
-      }
 
       if (onFileUploaded) onFileUploaded();
 
@@ -198,26 +149,36 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
   // Process queue
   useEffect(() => {
     const processQueue = async () => {
-      const pendingFile = queue.find(f => f.status === 'pending');
-      if (!pendingFile) return;
+      const uploadingCount = queue.filter(f => f.status === 'uploading').length;
+      if (uploadingCount >= MAX_CONCURRENT_FILES) return;
 
-      // All files must be encrypted
-      if (isUnlocked && masterPassword) {
-        // User already unlocked - use the master password automatically
-        console.log(`[UPLOAD] User unlocked - using master password automatically`);
-        uploadFile(pendingFile, masterPassword);
-      } else {
-        // User not unlocked - show password prompt to unlock
-        console.log(`[UPLOAD] User not unlocked - showing password prompt`);
-        setPendingFileForUpload(pendingFile);
-        setShowPasswordPrompt(true);
+      const pendingFiles = queue.filter(f => f.status === 'pending');
+      if (pendingFiles.length === 0) return;
+
+      // Process up to the concurrency limit
+      const itemsToStart = pendingFiles.slice(0, MAX_CONCURRENT_FILES - uploadingCount);
+
+      for (const pendingFile of itemsToStart) {
+        // All files must be encrypted
+        if (isUnlocked && masterPassword) {
+          // User already unlocked - use the master password automatically
+          console.log(`[UPLOAD] User unlocked - using master password automatically for ${pendingFile.file.name}`);
+          uploadFile(pendingFile, masterPassword);
+        } else if (!showPasswordPrompt) {
+          // User not unlocked - show password prompt to unlock
+          console.log(`[UPLOAD] User not unlocked - showing password prompt for ${pendingFile.file.name}`);
+          setPendingFileForUpload(pendingFile);
+          setShowPasswordPrompt(true);
+          // Only show prompt for the first one, others will wait
+          break;
+        }
       }
     };
 
-    if (queue.some(f => f.status === 'pending') && !queue.some(f => f.status === 'uploading')) {
+    if (queue.some(f => f.status === 'pending')) {
       processQueue();
     }
-  }, [queue, currentFolderId, onFileUploaded, isUnlocked, masterPassword, unlock]);
+  }, [queue, currentFolderId, onFileUploaded, isUnlocked, masterPassword, unlock, showPasswordPrompt]);
 
   const updateFileStatus = (id, status, progress, error = null, stage = '') => {
     setQueue(prev => prev.map(f => {
@@ -303,30 +264,20 @@ export default function UploadForm({ onFileUploaded, currentFolderId, externalFi
         </div>
 
         {/* Security Info */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <div className="flex items-center text-blue-700 text-sm font-medium">
-            <span className="mr-2">🔐</span>
-            {isEncrypted ? 'Encrypted with your master password (browser-side)' : 'Files will be encrypted on server'}
+        <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 transition-all duration-300">
+          <div className="flex items-start gap-3">
+            <span className="text-xl mt-0.5">🔐</span>
+            <div>
+               <p className="text-blue-900 text-sm font-bold">End-to-End Encrypted</p>
+               <p className="text-blue-700/80 text-xs leading-relaxed mt-0.5">
+                 Files are encrypted on your device using AES-256-GCM before they are uploaded.
+                 The server never sees your master password or the plaintext of your files.
+               </p>
+            </div>
           </div>
         </div>
 
-        {/* Upload Mode Toggle */}
-        <div className="flex items-center gap-4 bg-gray-50 p-3 rounded-lg">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isEncrypted}
-              onChange={(e) => setIsEncrypted(e.target.checked)}
-              className="w-4 h-4 rounded"
-            />
-            <span className="text-sm font-medium text-gray-700">
-              {isEncrypted ? 'Browser-side encryption' : 'Server-side encryption'}
-            </span>
-          </label>
-          <span className="text-xs text-gray-500">
-            {isEncrypted ? 'No file size limit' : 'Max 100MB per file'}
-          </span>
-        </div>
+
 
         {/* Queue List */}
         {queue.length > 0 && (

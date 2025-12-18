@@ -85,7 +85,7 @@ export async function POST(request) {
 
         // Derive Key from Password
         const { deriveEncryptionKey } = await import('@/lib/authService');
-        const key = await deriveEncryptionKey(master_password);
+        const key = await deriveEncryptionKey(master_password, auth.user.id);
 
         // Fetch Parts (metadata only, actual decryption happens on-demand)
         const parts = await getFileParts(file_id);
@@ -126,7 +126,7 @@ export async function POST(request) {
 
                             // Stream to browser immediately
                             controller.enqueue(decrypted);
-                            
+
                             console.log(`Streamed part ${part.part_number}/${parts.length}`);
                         } catch (partErr) {
                             console.error(`Error processing part ${part.part_number}:`, partErr);

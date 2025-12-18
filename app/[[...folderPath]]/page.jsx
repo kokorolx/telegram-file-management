@@ -319,7 +319,10 @@ export default function Home({ params }) {
         isOpen={showLogin}
         onLoginSuccess={handleLoginSuccess}
       />
-      <SetupModal onSetupComplete={handleSetupComplete} />
+      <SetupModal
+        onSetupComplete={handleSetupComplete}
+        refreshTrigger={refreshTrigger}
+      />
       <SettingsDialog
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
