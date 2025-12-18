@@ -9,10 +9,10 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/upload/chunk
- * 
+ *
  * Receive encrypted file chunk from browser
  * Browser has already encrypted the chunk - server does NOT decrypt
- * 
+ *
  * Request body:
  * {
  *   "file_id": "uuid",
@@ -26,7 +26,7 @@ export const dynamic = 'force-dynamic';
  *   "mime_type": "video/mp4",
  *   "folder_id": "optional-folder-id"
  * }
- * 
+ *
  * Response (success):
  * {
  *   "success": true,
@@ -34,7 +34,7 @@ export const dynamic = 'force-dynamic';
  *   "part_number": 1,
  *   "total_parts": 500
  * }
- * 
+ *
  * Response (last chunk):
  * {
  *   "success": true,
@@ -125,14 +125,14 @@ export async function POST(request) {
       // First chunk - create file metadata
       const fileExt = getFileExtension(original_filename);
       const mimeType = mime_type || getMimeType(fileExt) || 'application/octet-stream';
-      
+
       if (!userId) {
         console.error('[UPLOAD/CHUNK] Cannot create file without user_id');
-        return NextResponse.json({ 
-          error: 'User identification required. Please log in and try again.' 
+        return NextResponse.json({
+          error: 'User identification required. Please log in and try again.'
         }, { status: 401 });
       }
-      
+
       fileRecord = await createFile({
         id: file_id,
         user_id: userId,
@@ -167,7 +167,7 @@ export async function POST(request) {
 
       // Upload to Telegram (raw encrypted bytes)
       // sendFileToTelegram returns the file_id from Telegram Bot API
-      telegramFileId = await sendFileToTelegram(encryptedBuffer, `${original_filename}_part_${part_number}`);
+      telegramFileId = await sendFileToTelegram(userId, encryptedBuffer, `${original_filename}_part_${part_number}`);
 
       console.log(`✓ Uploaded encrypted chunk ${part_number}/${total_parts}`);
     } catch (err) {

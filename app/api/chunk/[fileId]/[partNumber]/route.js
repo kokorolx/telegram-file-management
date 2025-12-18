@@ -73,7 +73,7 @@ export async function GET(request, { params }) {
 
     // Fetch encrypted blob from Telegram
     // This is the ENCRYPTED data - we do NOT decrypt on server
-    const dlUrl = await getFileDownloadUrl(part.telegram_file_id);
+    const dlUrl = await getFileDownloadUrl(file.user_id, part.telegram_file_id);
     const telegramResponse = await fetch(dlUrl, { next: { revalidate: 0 } });
 
     if (!telegramResponse.ok) {

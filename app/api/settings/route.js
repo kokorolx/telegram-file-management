@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { saveSettings, getSettings, updateUserMasterPasswordHash, getUserById } from '@/lib/db';
+import { saveSettings, getSettings, updateUserMasterPasswordHash, getUserById, saveUserSettings, addBotToUser } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/apiAuth';
 
 const SETUP_TOKEN = process.env.SETUP_TOKEN || 'default-setup-token';
@@ -71,9 +71,16 @@ export async function POST(request) {
     const encryptionSalt = randomBytes(16).toString('hex');
 
     // Save Master Password to USER
-    const { setMasterPassword } = await import('@/lib/authService');
+    const { setMasterPassword, encryptSystemData } = await import('@/lib/authService');
     const hash = await setMasterPassword(masterPassword);
     await updateUserMasterPasswordHash(user.id, hash, encryptionSalt);
+
+    // Also save per-user encrypted telegram settings (primary bot)
+    await addBotToUser(user.id, {
+        name: 'Primary Bot',
+        botToken: encryptSystemData(finalBotToken),
+        tgUserId: encryptSystemData(finalUserId)
+    });
 
     return NextResponse.json({
       success: true,
@@ -120,7 +127,8 @@ export async function GET(request) {
 
 export async function PUT(request) {
   try {
-    const { masterPassword, setupToken } = await request.json();
+    const body = await request.json();
+    const { masterPassword, setupToken, botToken, userId: tgUserId } = body;
 
     const user = getUserFromRequest(request);
     if (!user || !user.id) {
@@ -174,10 +182,19 @@ export async function PUT(request) {
     const { randomBytes } = await import('crypto');
     const encryptionSalt = randomBytes(16).toString('hex');
 
-    const { setMasterPassword } = await import('@/lib/authService');
+    const { setMasterPassword, encryptSystemData } = await import('@/lib/authService');
     const hash = await setMasterPassword(masterPassword);
 
     await updateUserMasterPasswordHash(user.id, hash, encryptionSalt);
+
+    // If they provided botToken/userId, save them too (encrypted)
+    if (botToken && tgUserId) {
+        await addBotToUser(user.id, {
+            name: 'Primary Bot',
+            botToken: encryptSystemData(botToken),
+            tgUserId: encryptSystemData(tgUserId)
+        });
+    }
 
     return NextResponse.json({
       success: true,

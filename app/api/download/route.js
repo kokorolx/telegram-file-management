@@ -39,7 +39,7 @@ export async function GET(request) {
          return NextResponse.json({ success: false, error: 'File content missing' }, { status: 404 });
     }
 
-    const downloadUrl = await getFileDownloadUrl(fileRecord.telegram_file_id);
+    const downloadUrl = await getFileDownloadUrl(fileRecord.user_id, fileRecord.telegram_file_id);
     const response = await fetch(downloadUrl);
 
     if (!response.ok) {
@@ -98,7 +98,7 @@ export async function POST(request) {
         const rangeHeader = request.headers.get('range');
         if (rangeHeader && (mimeType.startsWith('video/') || mimeType.startsWith('audio/'))) {
             // Support range requests for efficient video/audio streaming
-            return handleRangeRequest(rangeHeader, parts, key, fileSize, mimeType, fileRecord.original_filename);
+            return handleRangeRequest(fileRecord.user_id, rangeHeader, parts, key, fileSize, mimeType, fileRecord.original_filename);
         }
 
         // Stream entire decrypted file with on-demand fetching
@@ -109,7 +109,7 @@ export async function POST(request) {
                     for (const part of parts) {
                         try {
                             // Fetch encrypted part from Telegram
-                            const dlUrl = await getFileDownloadUrl(part.telegram_file_id);
+                            const dlUrl = await getFileDownloadUrl(fileRecord.user_id, part.telegram_file_id);
                             const res = await fetch(dlUrl);
                             if (!res.ok) throw new Error(`Failed to fetch part ${part.part_number}`);
 
@@ -191,7 +191,7 @@ function encodeContentDispositionFilename(filename) {
  * Handle HTTP Range requests for encrypted files
  * Allows clients (browsers, video players) to seek through the file efficiently
  */
-async function handleRangeRequest(rangeHeader, parts, key, fileSize, mimeType, filename) {
+async function handleRangeRequest(userId, rangeHeader, parts, key, fileSize, mimeType, filename) {
     try {
         // Parse range header: "bytes=0-1023" or "bytes=1024-"
         const rangeParts = rangeHeader.replace(/bytes=/, '').split('-');
@@ -229,7 +229,7 @@ async function handleRangeRequest(rangeHeader, parts, key, fileSize, mimeType, f
             async start(controller) {
                 try {
                     for (const { part, byteOffset } of partsNeeded) {
-                        const dlUrl = await getFileDownloadUrl(part.telegram_file_id);
+                        const dlUrl = await getFileDownloadUrl(userId, part.telegram_file_id);
                         const res = await fetch(dlUrl);
                         if (!res.ok) throw new Error(`Failed to fetch part ${part.part_number}`);
 

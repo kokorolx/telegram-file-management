@@ -16,7 +16,8 @@ export default function SetupModal({ onSetupComplete, refreshTrigger }) {
   const [error, setError] = useState(null);
   const [setupComplete, setSetupComplete] = useState(false);
   const [hasMasterPassword, setHasMasterPassword] = useState(true);
-  const [useDefault, setUseDefault] = useState(true); // Always use default for now
+  const [useDefault, setUseDefault] = useState(true);
+  const [showConfig, setShowConfig] = useState(false); // Toggle for advanced config
   const { user } = useUser();
   const { unlock } = useEncryption();
 
@@ -79,11 +80,12 @@ export default function SetupModal({ onSetupComplete, refreshTrigger }) {
          // Let's modify the backend to allow setting master password for AUTHENTICATED users without SETUP_TOKEN.
       }
 
-      if (useDefault) {
-          payload.useDefault = true;
-      } else {
+      if (!useDefault) {
           payload.botToken = botToken;
           payload.userId = userId;
+          payload.useDefault = false;
+      } else {
+          payload.useDefault = true;
       }
 
       const response = await fetch('/api/settings', {
@@ -143,23 +145,144 @@ export default function SetupModal({ onSetupComplete, refreshTrigger }) {
           {/* TODO: Re-enable these fields in future if needed */}
 
           {!setupComplete && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Setup Token
-              </label>
-              <input
-                type="password"
-                value={setupToken}
-                onChange={(e) => setSetupToken(e.target.value)}
-                placeholder="Setup token from environment"
-                disabled={loading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 disabled:bg-gray-100"
-                required
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Check .env.local for SETUP_TOKEN (default: default-setup-token)
-              </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Setup Token
+                </label>
+                <input
+                  type="password"
+                  value={setupToken}
+                  onChange={(e) => setSetupToken(e.target.value)}
+                  placeholder="Setup token from environment"
+                  disabled={loading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 disabled:bg-gray-100"
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Check .env.local for SETUP_TOKEN
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between py-2">
+                 <span className="text-sm font-medium text-gray-700">Custom Telegram Bot?</span>
+                 <button
+                   type="button"
+                   onClick={() => setUseDefault(!useDefault)}
+                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${useDefault ? 'bg-gray-200' : 'bg-blue-600'}`}
+                 >
+                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useDefault ? 'translate-x-1' : 'translate-x-6'}`} />
+                 </button>
+              </div>
+
+              {!useDefault && (
+                <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-100 animate-in fade-in slide-in-from-top-2">
+                   <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                      Telegram Bot Token
+                    </label>
+                    <input
+                      type="password"
+                      value={botToken}
+                      onChange={(e) => setBotToken(e.target.value)}
+                      placeholder="123456:ABC-DEF..."
+                      disabled={loading}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-blue-500"
+                      required={!useDefault}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                      Telegram User ID
+                    </label>
+                    <input
+                      type="text"
+                      value={userId}
+                      onChange={(e) => setUserId(e.target.value)}
+                      placeholder="Your numerical ID"
+                      disabled={loading}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-blue-500"
+                      required={!useDefault}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
+          )}
+
+          {/* If setup is complete but user wants to update their personal bot config */}
+          {setupComplete && !hasMasterPassword && (
+             <div className="bg-blue-50/30 rounded-2xl p-4 border border-blue-100/50 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setShowConfig(!showConfig)}
+                  className="w-full flex items-center justify-between text-sm text-blue-700 font-semibold hover:text-blue-800 transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <span>{showConfig ? '▼' : '▶'}</span>
+                    <span>Use My Own Telegram Bot? (Optional)</span>
+                  </span>
+                  <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full uppercase tracking-wider">Advanced</span>
+                </button>
+
+                {showConfig && (
+                   <div className="mt-4 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="flex items-center justify-between p-3 bg-white/50 rounded-xl border border-blue-100">
+                         <div className="space-y-0.5">
+                            <span className="text-xs font-bold text-gray-700">Storage Bot Configuration</span>
+                            <p className="text-[10px] text-gray-500">Provide your own bot to store files in your private chat.</p>
+                         </div>
+                         <button
+                            type="button"
+                            onClick={() => setUseDefault(!useDefault)}
+                            className="text-[10px] font-bold text-blue-600 hover:text-blue-800 uppercase tracking-tighter"
+                         >
+                            {useDefault ? 'Set Custom Bot' : '← Back to Default'}
+                         </button>
+                      </div>
+
+                      {!useDefault ? (
+                        <div className="space-y-3 bg-white p-4 rounded-xl border border-blue-100 shadow-sm">
+                           <div>
+                            <label className="block text-[10px] font-bold text-blue-500 uppercase mb-1">Telegram Bot Token</label>
+                            <input
+                              type="password"
+                              value={botToken}
+                              onChange={(e) => setBotToken(e.target.value)}
+                              placeholder="123456:ABC-DEF..."
+                              disabled={loading}
+                              className="w-full px-3 py-2 border border-blue-100 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-blue-50/20"
+                              required={!useDefault}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-blue-500 uppercase mb-1">Telegram User ID</label>
+                            <input
+                              type="text"
+                              value={userId}
+                              onChange={(e) => setUserId(e.target.value)}
+                              placeholder="Your numeric ID"
+                              disabled={loading}
+                              className="w-full px-3 py-2 border border-blue-100 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-blue-50/20"
+                              required={!useDefault}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                         <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 text-center">
+                            <p className="text-xs text-gray-500">Using the system default bot for storage.</p>
+                            <button
+                               type="button"
+                               onClick={() => setUseDefault(false)}
+                               className="mt-2 text-xs text-blue-600 font-bold hover:underline"
+                            >
+                               Click to configure personal bot
+                            </button>
+                         </div>
+                      )}
+                   </div>
+                )}
+             </div>
           )}
 
           <div className={`${!setupComplete ? 'pt-2 border-t border-gray-100' : ''} space-y-3`}>

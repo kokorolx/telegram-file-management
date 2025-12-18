@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useEncryption } from '../contexts/EncryptionContext';
+import { decryptChunkBrowser } from '@/lib/clientDecryption';
 
 /**
  * Secure Video Player with Browser-Side Decryption (CDN-Friendly)
@@ -60,11 +61,12 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
      const iv = new Uint8Array(part.iv.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
      const authTag = new Uint8Array(part.auth_tag.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
 
-     // Decrypt
-     const decrypted = await crypto.subtle.decrypt(
-       { name: 'AES-GCM', iv: iv },
+     // Use centralized decryption utility (correctly handles CryptoKey import)
+     const decrypted = await decryptChunkBrowser(
+       new Uint8Array(encryptedBuffer),
        key,
-       new Uint8Array([...new Uint8Array(encryptedBuffer), ...authTag])
+       iv,
+       authTag
      );
 
      return { decrypted, total: partsRef.current.length };
