@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useEncryption } from '../contexts/EncryptionContext';
+import { useUser } from '../contexts/UserContext';
 import Modal from './Modal';
 
 export default function FolderNav({ currentFolderId, onFolderSelect, refreshTrigger }) {
+  const { user } = useUser();
   const { isUnlocked, unlock, lock } = useEncryption();
   const [folders, setFolders] = useState([]);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
@@ -21,9 +23,19 @@ export default function FolderNav({ currentFolderId, onFolderSelect, refreshTrig
   // State for lazy loading
   const [childrenMap, setChildrenMap] = useState({}); // folderId -> array of children
 
+  // Handle Logout
   useEffect(() => {
-    loadRootFolders();
-  }, [refreshTrigger]);
+    if (!user) {
+      setFolders([]);
+      setChildrenMap({});
+      setExpandedFolders(new Set());
+      setError(null);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) loadRootFolders();
+  }, [refreshTrigger, user]);
 
   async function loadRootFolders() {
     setLoading(true);

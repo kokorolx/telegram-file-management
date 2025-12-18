@@ -62,6 +62,19 @@ export default function Home({ params }) {
      setSearchTerm('');
   }, [currentPath]);
 
+  // Handle Logout / Unauthenticated state
+  useEffect(() => {
+    if (!user) {
+      setFiles([]);
+      setFolders([]);
+      setCurrentFolderId(null);
+      setCurrentFolderInfo(null);
+      setPage(1);
+      setHasMore(false);
+      setSearchTerm('');
+    }
+  }, [user]);
+
   // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -381,6 +394,32 @@ export default function Home({ params }) {
         </div>
       </div>
 
+      {!user ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-6 animate-fade-in">
+          <div className="w-20 h-20 bg-blue-100 rounded-2xl flex items-center justify-center mb-6 shadow-sm ring-1 ring-blue-50">
+            <span className="text-4xl text-blue-600">📁</span>
+          </div>
+          <h2 className="text-3xl font-bold text-gray-900 mb-3">Welcome to Telegram Files</h2>
+          <p className="text-gray-500 max-w-md mx-auto mb-8 text-lg">
+            A secure way to store and manage your files using Telegram as a backend.
+            End-to-end encrypted and completely free.
+          </p>
+          <div className="flex gap-4">
+              <button
+                onClick={() => setShowLogin(true)}
+                className="px-8 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-semibold shadow-lg shadow-blue-500/25 transition-all flex items-center gap-2"
+              >
+                <span>🚀</span> Get Started
+              </button>
+              <Link
+                href="/landing"
+                className="px-8 py-3 bg-white text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 font-semibold transition-all"
+              >
+                Learn More
+              </Link>
+          </div>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 container-custom mx-auto py-6">
         {/* Folder Navigation Sidebar */}
         <aside className="xl:col-span-1">
@@ -523,6 +562,7 @@ export default function Home({ params }) {
           </section>
         </main>
       </div>
+    )}
     </DropZone>
   );
 }
