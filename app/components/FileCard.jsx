@@ -2,17 +2,21 @@
 
 import { useState } from 'react';
 import { formatFileSize, getFileExtension } from '@/lib/utils';
-import PreviewModal from './PreviewModal';
+import Lightbox from './Lightbox';
 import FileCardThumbnail from './FileCardThumbnail';
 import { useEncryption } from '../contexts/EncryptionContext';
 import { blobCache } from '@/lib/secureImageCache'; // Add import
 
-export default function FileCard({ file, onFileDeleted, onContextMenu }) {
+export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMenu }) {
   const { masterPassword, unlock } = useEncryption(); // Assuming unlock might trigger UI in future, or we check isUnlocked
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState(null);
-  const [showPreview, setShowPreview] = useState(false);
+  const [showFullscreen, setShowFullscreen] = useState(false);
+  const [showMoveModal, setShowMoveModal] = useState(false); // Add move modal state if we want to add a move button
+  const [moving, setMoving] = useState(false);
+  const [selectedFolder, setSelectedFolder] = useState(null);
+  const [folders, setFolders] = useState([]); // To populate move modal if needed
 
   const fileExt = getFileExtension(file.original_filename);
   // ... date logic ...
@@ -28,7 +32,7 @@ export default function FileCard({ file, onFileDeleted, onContextMenu }) {
   const isAudio = file.mime_type?.startsWith('audio/');
   const isPdf = file.mime_type?.includes('pdf') || file.original_filename?.toLowerCase().endsWith('.pdf');
   // Preview button shows for all file types (media + PDF + unsupported file type thumbnails)
-  const isPreviewable = isImage || isVideo || isAudio || isPdf || true;
+  const isPreviewable = true;
 
   const handleDownload = async () => {
     try {
@@ -112,7 +116,7 @@ export default function FileCard({ file, onFileDeleted, onContextMenu }) {
       }
 
       if (onFileDeleted) {
-        onFileDeleted();
+        onFileDeleted(file.id);
       }
     } catch (err) {
       setError(err.message);
@@ -156,9 +160,9 @@ export default function FileCard({ file, onFileDeleted, onContextMenu }) {
         <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2">
           {isPreviewable && (
             <button
-              onClick={() => setShowPreview(true)}
+              onClick={() => setShowFullscreen(true)}
               className="bg-white text-gray-800 p-2 rounded-full shadow-lg hover:bg-blue-50 hover:text-blue-600 transition-all transform hover:scale-110"
-              title="Preview"
+              title="View File"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -213,10 +217,10 @@ export default function FileCard({ file, onFileDeleted, onContextMenu }) {
         </div>
       )}
 
-      <PreviewModal
+      <Lightbox
         file={file}
-        isOpen={showPreview}
-        onClose={() => setShowPreview(false)}
+        isOpen={showFullscreen}
+        onClose={() => setShowFullscreen(false)}
       />
     </div>
   );

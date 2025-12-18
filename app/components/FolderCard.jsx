@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-export default function FolderCard({ folder, onDoubleClick, onCreated, onContextMenu, onMove }) {
+export default function FolderCard({ folder, onDoubleClick, onCreated, onDeleted, onContextMenu, onMove }) {
   const [deleting, setDeleting] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState(folder.name);
@@ -80,7 +80,7 @@ export default function FolderCard({ folder, onDoubleClick, onCreated, onContext
         throw new Error(data.error || 'Failed to delete folder');
       }
 
-      if (onCreated) onCreated();
+      if (onDeleted) onDeleted(folder.id);
     } catch (err) {
       setError(err.message);
       console.error('Delete error:', err);

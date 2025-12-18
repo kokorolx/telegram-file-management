@@ -2,16 +2,20 @@
 
 import { useState } from 'react';
 import { formatFileSize, getFileExtension } from '@/lib/utils';
-import PreviewModal from './PreviewModal';
+import Lightbox from './Lightbox';
 import FileCardThumbnail from './FileCardThumbnail';
 import { useEncryption } from '../contexts/EncryptionContext';
 import { blobCache } from '@/lib/secureImageCache'; // Add import
 
-export default function FileRow({ file, onFileDeleted, onContextMenu }) {
+export default function FileRow({ file, onFileDeleted, onContextMenu, onFileMoved, isSelected, onSelectionChange }) {
   const { masterPassword, encryptionKey, isUnlocked } = useEncryption();
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
+  const [showFullscreen, setShowFullscreen] = useState(false);
+  const [showMoveModal, setShowMoveModal] = useState(false);
+  const [folders, setFolders] = useState([]);
+  const [selectedFolder, setSelectedFolder] = useState(null);
+  const [moving, setMoving] = useState(false);
   const [error, setError] = useState(null);
 
   const fileExt = getFileExtension(file.original_filename);
@@ -22,10 +26,7 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
     year: 'numeric',
   });
 
-  const isPreviewable = file.mime_type?.startsWith('image/') ||
-                        file.mime_type?.startsWith('video/') ||
-                        file.mime_type?.startsWith('audio/') ||
-                        file.mime_type?.includes('pdf');
+  const isPreviewable = true; // All files can now be opened in unified Lightbox (with fallbacks)
 
   const handleDownload = async (e) => {
     e.stopPropagation();
@@ -44,6 +45,7 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
+          await fetch(`/api/stats/file/${file.id}/download`, { method: 'POST' });
           return;
       }
 
@@ -73,11 +75,48 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
       a.click();
       if (!file.is_encrypted) window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+
+      await fetch(`/api/stats/file/${file.id}/download`, { method: 'POST' });
     } catch (err) {
       console.error('Download error:', err);
       alert('Download failed');
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleMoveClick = async (e) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch('/api/folders?user_folders=true');
+      if (!res.ok) throw new Error('Failed to fetch folders');
+      const data = await res.json();
+      setFolders(data.folders || []);
+      setShowMoveModal(true);
+    } catch (err) {
+      console.error('Fetch folders error:', err);
+      alert('Failed to load folders');
+    }
+  };
+
+  const handleMoveFile = async () => {
+    try {
+      setMoving(true);
+      const res = await fetch('/api/files/move', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId: file.id, targetFolderId: selectedFolder })
+      });
+
+      if (!res.ok) throw new Error('Failed to move file');
+      setShowMoveModal(false);
+      setSelectedFolder(null);
+      if (onFileMoved) onFileMoved(selectedFolder);
+    } catch (err) {
+      console.error('Move file error:', err);
+      alert('Failed to move file');
+    } finally {
+      setMoving(false);
     }
   };
 
@@ -90,7 +129,9 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
       setDeleting(true);
       const response = await fetch(`/api/files/${file.id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete');
-      if (onFileDeleted) onFileDeleted();
+      if (onFileDeleted) {
+        onFileDeleted(file.id);
+      }
     } catch (err) {
       console.error('Delete error:', err);
       alert('Delete failed');
@@ -102,8 +143,14 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
   return (
     <>
       <div
-        className="group flex items-center gap-4 p-3 bg-white border-b border-gray-100 hover:bg-blue-50/50 transition-colors cursor-pointer cursor-move"
-        onClick={() => isPreviewable && setShowPreview(true)}
+        className={`group flex items-center gap-4 p-3 border-b border-gray-100 transition-colors cursor-pointer cursor-move ${
+          isSelected ? 'bg-blue-100 border-blue-200' : 'bg-white hover:bg-blue-50/50'
+        }`}
+        onClick={(e) => {
+          if (e.target.type !== 'checkbox') {
+            setShowFullscreen(true);
+          }
+        }}
         onContextMenu={onContextMenu}
         draggable
         onDragStart={(e) => {
@@ -111,6 +158,15 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
            e.dataTransfer.effectAllowed = 'move';
         }}
       >
+        {/* Checkbox */}
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={(e) => onSelectionChange?.(file.id, e)}
+          className="w-4 h-4 rounded cursor-pointer flex-shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        />
+
         {/* Icon/Thumbnail */}
         <div className="w-10 h-10 flex-shrink-0 relative">
           {file.mime_type?.startsWith('image/') ? (
@@ -157,17 +213,26 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setShowPreview(true);
+                setShowFullscreen(true);
               }}
               className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-              title="Preview"
+              title="Fullscreen Preview"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6v4m12-4h4v4M6 18h-4v-4m16 4h4v-4" />
               </svg>
             </button>
           )}
+          <button
+            onClick={handleMoveClick}
+            disabled={moving}
+            className="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-purple-100 rounded-lg transition-colors"
+            title="Move"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+            </svg>
+          </button>
           {(!file.is_encrypted || masterPassword) && (
           <button
             onClick={handleDownload}
@@ -193,11 +258,62 @@ export default function FileRow({ file, onFileDeleted, onContextMenu }) {
         </div>
       </div>
 
-      <PreviewModal
+      <Lightbox
         file={file}
-        isOpen={showPreview}
-        onClose={() => setShowPreview(false)}
+        isOpen={showFullscreen}
+        onClose={() => setShowFullscreen(false)}
       />
+
+      {showMoveModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
+          <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Move File</h3>
+
+            <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
+              <button
+                onClick={() => setSelectedFolder(null)}
+                className={`w-full text-left px-4 py-2 rounded ${
+                  selectedFolder === null ? 'bg-blue-100 text-blue-900' : 'hover:bg-gray-100'
+                }`}
+              >
+                Root
+              </button>
+              {folders.map(folder => (
+                <button
+                  key={folder.id}
+                  onClick={() => setSelectedFolder(folder.id)}
+                  className={`w-full text-left px-4 py-2 rounded ${
+                    selectedFolder === folder.id ? 'bg-blue-100 text-blue-900' : 'hover:bg-gray-100'
+                  }`}
+                >
+                  {folder.name}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowMoveModal(false);
+                  setSelectedFolder(null);
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMoveFile}
+                disabled={moving}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {moving ? 'Moving...' : 'Move'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
     </>
   );
 }

@@ -16,6 +16,10 @@ export default function DropZone({ onFilesDropped, children }) {
     const handleDrop = (e) => {
         e.preventDefault();
         e.stopPropagation();
+
+        const isFileDrag = e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files');
+        if (!isFileDrag) return;
+
         setIsDragOver(false);
         setDragCounter(0);
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -35,17 +39,24 @@ export default function DropZone({ onFilesDropped, children }) {
   const handleDragEnter = (e) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Check if dragging actual files from OS
+    const isFileDrag = e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files');
+    if (!isFileDrag) return;
+
     setDragCounter((prev) => prev + 1);
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-      setIsDragOver(true);
-    }
+    setIsDragOver(true);
   };
 
   const handleDragLeave = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragCounter((prev) => prev - 1);
-    if (dragCounter === 1) { // Only falsify if it's the last leave event (to handle child elements)
+
+    const isFileDrag = e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files');
+    if (!isFileDrag) return;
+
+    setDragCounter((prev) => Math.max(0, prev - 1));
+    if (dragCounter <= 1) {
         setIsDragOver(false);
     }
   };

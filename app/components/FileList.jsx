@@ -7,7 +7,21 @@ import FileRow from './FileRow';
 import FolderRow from './FolderRow';
 import ViewToggle from './ViewToggle';
 
-export default function FileList({ folders = [], files = [], onFileDeleted, onFolderDoubleClick, onFolderCreated, onItemContextMenu, onItemMove, onViewModeChange }) {
+export default function FileList({
+  folders = [],
+  files = [],
+  onFileDeleted,
+  onFolderDeleted,
+  onFolderDoubleClick,
+  onFolderCreated,
+  onItemContextMenu,
+  onItemMove,
+  onViewModeChange,
+  selectedItems,
+  selectedFolders,
+  onFileSelect,
+  onFolderSelect
+}) {
   const [sortBy, setSortBy] = useState('date-desc');
   const [viewMode, setViewMode] = useState('grid');
 
@@ -79,6 +93,7 @@ export default function FileList({ folders = [], files = [], onFileDeleted, onFo
               folder={folder}
               onDoubleClick={() => onFolderDoubleClick(folder.id)}
               onCreated={onFolderCreated}
+              onDeleted={onFolderDeleted}
               onContextMenu={(e) => onItemContextMenu && onItemContextMenu(e, folder, 'folder')}
               onMove={onItemMove}
             />
@@ -89,6 +104,7 @@ export default function FileList({ folders = [], files = [], onFileDeleted, onFo
                 key={file.id}
                 file={file}
                 onFileDeleted={onFileDeleted}
+                onFileMoved={(targetFolderId) => onItemMove && onItemMove('file', file.id, targetFolderId)}
                 onContextMenu={(e) => onItemContextMenu && onItemContextMenu(e, file, 'file')}
             />
           ))}
@@ -111,8 +127,11 @@ export default function FileList({ folders = [], files = [], onFileDeleted, onFo
                  folder={folder}
                  onDoubleClick={() => onFolderDoubleClick(folder.id)}
                  onCreated={onFolderCreated}
+                 onDeleted={onFolderDeleted}
                  onContextMenu={(e) => onItemContextMenu && onItemContextMenu(e, folder, 'folder')}
                  onMove={onItemMove}
+                 isSelected={selectedFolders?.has(folder.id)}
+                 onSelectionChange={onFolderSelect}
                />
              ))}
 
@@ -121,7 +140,10 @@ export default function FileList({ folders = [], files = [], onFileDeleted, onFo
                  key={file.id}
                  file={file}
                  onFileDeleted={onFileDeleted}
+                 onFileMoved={(targetFolderId) => onItemMove && onItemMove('file', file.id, targetFolderId)}
                  onContextMenu={(e) => onItemContextMenu && onItemContextMenu(e, file, 'file')}
+                 isSelected={selectedItems?.has(file.id)}
+                 onSelectionChange={onFileSelect}
                />
              ))}
 

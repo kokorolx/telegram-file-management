@@ -8,6 +8,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const parentId = searchParams.get('parent_id');
     const all = searchParams.get('all');
+    const userFolders = searchParams.get('user_folders');
 
     // Get authenticated user
     const user = getUserFromRequest(request);
@@ -19,7 +20,14 @@ export async function GET(request) {
     }
 
     let folders;
-    if (all === 'true') {
+    if (userFolders === 'true') {
+      // Return all folders for user (for move dialog)
+      folders = await getAllFolders(user.id);
+      return NextResponse.json({
+        success: true,
+        folders: folders,
+      });
+    } else if (all === 'true') {
       folders = await getAllFolders(user.id);
     } else if (parentId) {
       // Get subfolders for specific parent

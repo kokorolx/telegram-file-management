@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-export default function FolderRow({ folder, onDoubleClick, onCreated, onContextMenu, onMove }) {
+export default function FolderRow({ folder, onDoubleClick, onCreated, onDeleted, onContextMenu, onMove, isSelected, onSelectionChange }) {
   const [deleting, setDeleting] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState(folder.name);
@@ -23,7 +23,8 @@ export default function FolderRow({ folder, onDoubleClick, onCreated, onContextM
       setDeleting(true);
       const response = await fetch(`/api/folders/${folder.id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete');
-      if (onCreated) onCreated();
+      if (onDeleted) onDeleted(folder.id);
+      if (onCreated) onCreated(); // Keep for legacy if some parent expects it for other reasons
     } catch (err) {
       console.error('Delete error:', err);
       alert('Delete failed');
@@ -96,12 +97,18 @@ export default function FolderRow({ folder, onDoubleClick, onCreated, onContextM
   return (
     <div
       className={`group flex items-center gap-4 p-3 border-b transition-colors cursor-pointer select-none cursor-move
-        ${isDragOver
+        ${isSelected
+          ? 'bg-blue-100 border-blue-200'
+          : isDragOver
           ? 'bg-blue-100 border-blue-300 ring-inset ring-2 ring-blue-500'
           : 'bg-white border-gray-100 hover:bg-blue-50/50'
         }
       `}
-      onClick={handleRowClick}
+      onClick={(e) => {
+        if (e.target.type !== 'checkbox') {
+          handleRowClick();
+        }
+      }}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
       draggable
@@ -113,6 +120,15 @@ export default function FolderRow({ folder, onDoubleClick, onCreated, onContextM
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Checkbox */}
+      <input
+        type="checkbox"
+        checked={isSelected}
+        onChange={(e) => onSelectionChange?.(folder.id, e)}
+        className="w-4 h-4 rounded cursor-pointer flex-shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      />
+
       {/* Icon */}
       <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center text-2xl">
         📁

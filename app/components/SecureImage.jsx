@@ -2,19 +2,41 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useEncryption } from '../contexts/EncryptionContext';
-import { blobCache } from '@/lib/secureImageCache'; // Use alias if possible or relative path
+import { blobCache } from '@/lib/secureImageCache';
 
 export default function SecureImage({ file, className, alt, ...props }) {
   const { masterPassword, encryptionKey, isUnlocked } = useEncryption();
   const [src, setSrc] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const containerRef = useRef(null);
   const mountedRef = useRef(true);
+
+  // Intersection Observer for Lazy Loading
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect(); // Once visible, stay visible to allow fetch
+        }
+      },
+      { threshold: 0.1, rootMargin: '200px' } // Load a bit early
+    );
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [file.id]);
 
   // Clear local src when locked (Cache is cleared by Context)
   useEffect(() => {
     if (!isUnlocked) {
         setSrc(null);
+        // We don't reset isVisible here so that it can re-trigger immediately if still in view when unlocked
     }
   }, [isUnlocked]);
 
@@ -28,14 +50,14 @@ export default function SecureImage({ file, className, alt, ...props }) {
   useEffect(() => {
     if (!file) return;
 
-    // 1. If not encrypted, use direct URL
+    // 1. If not encrypted, use direct URL immediately (browser handles native lazy loading if needed)
     if (!file.is_encrypted) {
       setSrc(`/api/download?file_id=${file.id}`);
       return;
     }
 
-    // 2. If encrypted but locked, ensure src is null
-    if (!isUnlocked || !masterPassword) {
+    // 2. If encrypted but locked or not visible yet, stop
+    if (!isUnlocked || !masterPassword || !isVisible) {
       setSrc(null);
       return;
     }
@@ -48,6 +70,7 @@ export default function SecureImage({ file, className, alt, ...props }) {
 
     // 4. Fetch and Create Blob
     async function fetchImage() {
+      if (loading) return;
       try {
         setLoading(true);
         setError(null);
@@ -57,7 +80,7 @@ export default function SecureImage({ file, className, alt, ...props }) {
         // 1. Fetch parts metadata (IVs, AuthTags)
         const parts = await fetchFilePartMetadata(file.id);
 
-        // 2. Fetch and decrypt all chunks in parallel
+        // 2. Fetch and decrypt all chunks in parallel (with concurrency limit in utility)
         const blob = await fetchAndDecryptFullFile(file.id, encryptionKey, parts);
 
         const url = URL.createObjectURL(blob);
@@ -80,12 +103,12 @@ export default function SecureImage({ file, className, alt, ...props }) {
         fetchImage();
     }
 
-  }, [file.id, file.is_encrypted, masterPassword, encryptionKey, isUnlocked]);
+  }, [file.id, file.is_encrypted, masterPassword, encryptionKey, isUnlocked, isVisible]);
 
   // Locked State
   if (file.is_encrypted && !isUnlocked) {
     return (
-        <div className={`flex flex-col items-center justify-center bg-gray-100 text-gray-400 ${className}`} title="Vault Locked">
+        <div ref={containerRef} className={`flex flex-col items-center justify-center bg-gray-100 text-gray-400 ${className}`} title="Vault Locked">
             <span className="text-2xl mb-1">🔒</span>
             <span className="text-[10px] font-medium">Locked</span>
         </div>
@@ -94,15 +117,16 @@ export default function SecureImage({ file, className, alt, ...props }) {
 
   if (error) {
     return (
-        <div className={`flex flex-col items-center justify-center bg-red-50 text-red-500 ${className}`}>
+        <div ref={containerRef} className={`flex flex-col items-center justify-center bg-red-50 text-red-500 ${className}`}>
              <span className="text-xs">Error</span>
         </div>
     );
   }
 
   if (!src || loading) {
-    return <div className={`animate-pulse bg-gray-200 ${className}`} />;
+    return <div ref={containerRef} className={`animate-pulse bg-gray-200 ${className}`} />;
   }
 
-  return <img src={src} alt={alt || file.original_filename} className={`object-cover ${className}`} {...props} />;
+  return <img ref={containerRef} src={src} alt={alt || file.original_filename} className={`object-cover ${className}`} {...props} />;
 }
+

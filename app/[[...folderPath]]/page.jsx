@@ -9,12 +9,15 @@ import FolderNav from '../components/FolderNav';
 import Breadcrumb from '../components/Breadcrumb';
 import CreateFolderDialog from '../components/CreateFolderDialog';
 import DropZone from '../components/DropZone';
-import SettingsDialog from '../components/SettingsDialog';
+import SettingsPanel from '../components/SettingsPanel';
 import LoginDialog from '../components/LoginDialog';
-import ContextMenu from '../components/ContextMenu';
+import EnhancedContextMenu from '../components/EnhancedContextMenu';
 import { FileListSkeletonGrid, FileListSkeletonRow } from '../components/SkeletonLoader';
 import Link from 'next/link';
 import { useUser } from '../contexts/UserContext';
+import { useMultiSelect } from '../hooks/useMultiSelect';
+import { useMoveContextMenu } from '../hooks/useMoveContextMenu';
+import MoveItemsDialog from '../components/MoveItemsDialog';
 
 export default function Home({ params }) {
   const router = useRouter();
@@ -50,6 +53,11 @@ export default function Home({ params }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
   const [viewMode, setViewMode] = useState('grid');
+
+  // Multi-select state
+  const { selectedItems, selectedFolders, toggleFile, toggleFolder, clearSelection, hasSelection, selectionCount } = useMultiSelect();
+  const { getMoveMenuItems, moveItems, isMoving } = useMoveContextMenu(folders);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
 
   // Reset state when path changes (Navigation)
   useEffect(() => {
@@ -219,7 +227,17 @@ export default function Home({ params }) {
     }, 100);
   };
 
-  const handleFileDeleted = () => {
+  const handleFileDeleted = (fileId) => {
+    if (fileId) {
+      setFiles(prev => prev.filter(f => f.id !== fileId));
+    }
+    setRefreshTrigger(prev => prev + 1);
+  };
+
+  const handleFolderDeleted = (folderId) => {
+    if (folderId) {
+      setFolders(prev => prev.filter(f => f.id !== folderId));
+    }
     setRefreshTrigger(prev => prev + 1);
   };
 
@@ -240,56 +258,132 @@ export default function Home({ params }) {
 
   const handleContextMenu = (e, item, type) => {
     e.preventDefault();
-    const menuItems = [];
 
-    if (type === 'folder') {
+    // Determine which items are selected AFTER this click
+    let itemsToSelect = new Set(selectedItems);
+    let foldersToSelect = new Set(selectedFolders);
+
+    if (type === 'file' && !selectedItems.has(item.id)) {
+      itemsToSelect.add(item.id);
+    } else if (type === 'folder' && !selectedFolders.has(item.id)) {
+      foldersToSelect.add(item.id);
+    }
+
+    const menuItems = [];
+    const hasMultipleItems = itemsToSelect.size + foldersToSelect.size > 0;
+
+    if (hasMultipleItems) {
+      // Show multi-select context menu
       menuItems.push({
-        label: 'Open',
-        icon: '📂',
+        icon: '📋',
+        label: `Move ${itemsToSelect.size + foldersToSelect.size} item${itemsToSelect.size + foldersToSelect.size !== 1 ? 's' : ''}`,
         onClick: () => {
+          // Update selection state first
+          if (type === 'file' && !selectedItems.has(item.id)) toggleFile(item.id);
+          if (type === 'folder' && !selectedFolders.has(item.id)) toggleFolder(item.id);
+          setShowMoveDialog(true);
+        }
+      });
+
+      if (itemsToSelect.size > 0) {
+        menuItems.push({ type: 'divider' });
+        menuItems.push({
+          label: `Delete ${itemsToSelect.size} file${itemsToSelect.size !== 1 ? 's' : ''}`,
+          icon: '🗑️',
+          danger: true,
+          onClick: async () => {
+            if (!confirm(`Delete ${itemsToSelect.size} file(s)?`)) return;
+            try {
+              for (const fileId of itemsToSelect) {
+                await fetch(`/api/files/${fileId}`, { method: 'DELETE' });
+              }
+              setFiles(prev => prev.filter(f => !itemsToSelect.has(f.id)));
+              clearSelection();
+              setRefreshTrigger(prev => prev + 1);
+            } catch (e) { console.error(e); alert('Failed to delete files'); }
+          }
+        });
+      }
+
+      if (foldersToSelect.size > 0) {
+        menuItems.push({ type: 'divider' });
+        menuItems.push({
+          label: `Delete ${foldersToSelect.size} folder${foldersToSelect.size !== 1 ? 's' : ''}`,
+          icon: '🗑️',
+          danger: true,
+          onClick: async () => {
+            if (!confirm(`Delete ${foldersToSelect.size} folder(s)?`)) return;
+            try {
+              for (const folderId of foldersToSelect) {
+                await fetch(`/api/folders/${folderId}`, { method: 'DELETE' });
+              }
+              setFolders(prev => prev.filter(f => !foldersToSelect.has(f.id)));
+              clearSelection();
+              setRefreshTrigger(prev => prev + 1);
+            } catch (e) { console.error(e); alert('Failed to delete folders'); }
+          }
+        });
+      }
+
+      menuItems.push({ type: 'divider' });
+      menuItems.push({
+        label: 'Deselect All',
+        icon: '✕',
+        onClick: () => clearSelection()
+      });
+    } else {
+      // Show single-item context menu
+      if (type === 'folder') {
+        menuItems.push({
+          label: 'Open',
+          icon: '📂',
+          onClick: () => {
             const slug = item.slug || item.name.toLowerCase().replace(/\s/g, '-');
             const newPath = (currentPath === '/' ? '' : currentPath) + '/' + slug;
             navigateToPath(newPath);
-        }
-      });
-      menuItems.push({ type: 'divider' });
-      menuItems.push({
-        label: 'Delete',
-        icon: '🗑️',
-        danger: true,
-        onClick: async () => {
-          if (!confirm(`Delete folder "${item.name}"?`)) return;
-          try {
-             await fetch(`/api/folders/${item.id}`, { method: 'DELETE' });
-             setRefreshTrigger(prev => prev + 1);
-          } catch (e) { console.error(e); }
-        }
-      });
-    } else if (type === 'file') {
-      menuItems.push({
-        label: 'Download',
-        icon: '⬇️',
-        onClick: () => {
+          }
+        });
+        menuItems.push({ type: 'divider' });
+        menuItems.push({
+          label: 'Delete',
+          icon: '🗑️',
+          danger: true,
+          onClick: async () => {
+            if (!confirm(`Delete folder "${item.name}"?`)) return;
+            try {
+              await fetch(`/api/folders/${item.id}`, { method: 'DELETE' });
+              setFolders(prev => prev.filter(f => f.id !== item.id));
+              setRefreshTrigger(prev => prev + 1);
+            } catch (e) { console.error(e); }
+          }
+        });
+      } else if (type === 'file') {
+        menuItems.push({
+          label: 'Download',
+          icon: '⬇️',
+          onClick: () => {
             const a = document.createElement('a');
             a.href = `/api/download?file_id=${item.id}`;
             a.download = item.original_filename;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-        }
-      });
-      menuItems.push({
-        label: 'Delete',
-        icon: '🗑️',
-        danger: true,
-        onClick: async () => {
-          if (!confirm(`Delete file "${item.original_filename}"?`)) return;
-          try {
-             await fetch(`/api/files/${item.id}`, { method: 'DELETE' });
-             setRefreshTrigger(prev => prev + 1);
-          } catch (e) { console.error(e); }
-        }
-      });
+          }
+        });
+        menuItems.push({
+          label: 'Delete',
+          icon: '🗑️',
+          danger: true,
+          onClick: async () => {
+            if (!confirm(`Delete file "${item.original_filename}"?`)) return;
+            try {
+              await fetch(`/api/files/${item.id}`, { method: 'DELETE' });
+              setFiles(prev => prev.filter(f => f.id !== item.id));
+              setRefreshTrigger(prev => prev + 1);
+            } catch (e) { console.error(e); }
+          }
+        });
+      }
     }
 
     setContextMenu({ x: e.clientX, y: e.clientY, items: menuItems });
@@ -319,6 +413,14 @@ export default function Home({ params }) {
         if (!response.ok) {
             throw new Error('Failed to move item');
         }
+
+        // Update local state immediately for snappy feel
+        if (type === 'file') {
+            setFiles(prev => prev.filter(f => f.id !== itemId));
+        } else if (type === 'folder') {
+            setFolders(prev => prev.filter(f => f.id !== itemId));
+        }
+
         setRefreshTrigger(prev => prev + 1);
     } catch (err) {
         console.error('Move error:', err);
@@ -336,7 +438,7 @@ export default function Home({ params }) {
         onSetupComplete={handleSetupComplete}
         refreshTrigger={refreshTrigger}
       />
-      <SettingsDialog
+      <SettingsPanel
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
       />
@@ -350,13 +452,44 @@ export default function Home({ params }) {
         parentName={currentFolderInfo?.name}
       />
       {contextMenu && (
-        <ContextMenu
+        <EnhancedContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           items={contextMenu.items}
           onClose={() => setContextMenu(null)}
         />
       )}
+      <MoveItemsDialog
+        isOpen={showMoveDialog}
+        onClose={() => setShowMoveDialog(false)}
+        folders={folders}
+        itemCount={selectionCount}
+        fileCount={selectedItems.size}
+        folderCount={selectedFolders.size}
+        isMoving={isMoving}
+        selectedFolders={selectedFolders}
+        currentFolderId={currentFolderId}
+        onFolderCreated={() => setRefreshTrigger(prev => prev + 1)}
+        onMove={async (targetFolderId) => {
+          try {
+            await moveItems(selectedItems, selectedFolders, targetFolderId);
+
+            // Update local state immediately
+            if (selectedItems.size > 0) {
+              setFiles(prev => prev.filter(f => !selectedItems.has(f.id)));
+            }
+            if (selectedFolders.size > 0) {
+              setFolders(prev => prev.filter(f => !selectedFolders.has(f.id)));
+            }
+
+            clearSelection();
+            setShowMoveDialog(false);
+            setRefreshTrigger(prev => prev + 1);
+          } catch (err) {
+            alert('Failed to move items: ' + err.message);
+          }
+        }}
+      />
       {/* Header */}
       <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-sm border-b border-slate-200/50 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -484,6 +617,33 @@ export default function Home({ params }) {
               </h2>
             </div>
 
+            {/* Selection Bar */}
+            {hasSelection && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-blue-900">
+                    {selectionCount} item{selectionCount !== 1 ? 's' : ''} selected
+                  </span>
+                  {selectedItems.size > 0 && (
+                    <span className="text-xs text-blue-700">
+                      {selectedItems.size} file{selectedItems.size !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {selectedFolders.size > 0 && (
+                    <span className="text-xs text-blue-700">
+                      {selectedFolders.size} folder{selectedFolders.size !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={clearSelection}
+                  className="px-3 py-1 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-100 rounded transition-colors"
+                >
+                  Deselect All
+                </button>
+              </div>
+            )}
+
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg flex items-start gap-3">
                 <span className="text-lg flex-shrink-0">⚠️</span>
@@ -527,6 +687,7 @@ export default function Home({ params }) {
                       folders={folders}
                       files={files}
                       onFileDeleted={handleFileDeleted}
+                      onFolderDeleted={handleFolderDeleted}
                       onFolderDoubleClick={(folderId) => {
                           const clickedFolder = folders.find(f => f.id === folderId);
                           if (clickedFolder) {
@@ -537,7 +698,12 @@ export default function Home({ params }) {
                       }}
                       onFolderCreated={handleFileUploaded}
                       onItemContextMenu={handleContextMenu}
+                      onItemMove={handleItemMove}
                       onViewModeChange={setViewMode}
+                      selectedItems={selectedItems}
+                      selectedFolders={selectedFolders}
+                      onFileSelect={toggleFile}
+                      onFolderSelect={toggleFolder}
                     />
                 </div>
 

@@ -1,7 +1,19 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import { requireAuth } from '@/lib/auth';
-import { getFileById, createFile, createFilePart } from '@/lib/db';
+import { 
+  getFileById, 
+  createFile, 
+  createFilePart, 
+  getNextBotForUpload, 
+  incrementBotUploadCounter,
+  updateUserStats,
+  updateFolderStats,
+  createFileStats,
+  updateBotUsageStats,
+  createUserStats,
+  createFolderStats
+} from '@/lib/db';
 import { sendFileToTelegram } from '@/lib/telegram';
 import { getFileExtension, getMimeType } from '@/lib/utils';
 
@@ -178,6 +190,10 @@ export async function POST(request) {
       );
     }
 
+    // Step 2.5: Select bot for this upload using round-robin
+    let selectedBot = await getNextBotForUpload(userId);
+    const botId = selectedBot?.id || null;
+
     // Step 3: Store chunk metadata in database
     // Key: We store IV and auth_tag (needed for decryption on browser)
     // We do NOT store encrypted_data in DB (only in Telegram)
@@ -190,8 +206,14 @@ export async function POST(request) {
         part_number,
         size: decryptedSize, // Size of DECRYPTED chunk
         iv, // Hex string (needed for browser decryption)
-        auth_tag // Hex string (needed for browser decryption)
+        auth_tag, // Hex string (needed for browser decryption)
+        bot_id: botId // Track which bot stores this part
       });
+
+      // Increment bot upload counter
+      if (botId) {
+        await incrementBotUploadCounter(botId);
+      }
 
       console.log(`✓ Stored part metadata: ${part_number}/${total_parts}`);
     } catch (err) {
@@ -209,6 +231,49 @@ export async function POST(request) {
       // All chunks received - file is complete
       console.log(`✅ All ${total_parts} chunks received for file ${file_id}`);
 
+      // Update stats on completion
+      const finalFileSize = decryptedSize * total_parts;
+      try {
+        // Create/update user stats
+        let userStats = await createUserStats(userId);
+        if (userStats) {
+          await updateUserStats(userId, {
+            total_files: 1,
+            total_size: finalFileSize,
+            total_uploads: 1,
+            total_downloads: 0
+          });
+        }
+
+        // Create file stats
+        await createFileStats(file_id, userId);
+
+        // Update folder stats if file is in a folder
+        if (folder_id) {
+          let folderStats = await createFolderStats(folder_id, userId);
+          if (folderStats) {
+            await updateFolderStats(folder_id, {
+              files_count: 1,
+              total_size: finalFileSize
+            });
+          }
+        }
+
+        // Update bot usage stats if bot was used
+        if (botId) {
+          let botStats = await updateBotUsageStats(botId, {
+            files_count: 1,
+            total_size: finalFileSize,
+            uploads_count: 1
+          });
+        }
+
+        console.log(`✓ Updated stats for file ${file_id}`);
+      } catch (err) {
+        console.error('Failed to update stats:', err);
+        // Don't fail the upload if stats update fails
+      }
+
       return NextResponse.json(
         {
           success: true,
@@ -219,7 +284,7 @@ export async function POST(request) {
           file: {
             id: fileRecord.id,
             original_filename: fileRecord.original_filename,
-            file_size: decryptedSize * total_parts,
+            file_size: finalFileSize,
             is_encrypted: true
           }
         },
