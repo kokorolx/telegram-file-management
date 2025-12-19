@@ -7,6 +7,8 @@ const PUBLIC_PATHS = [
   '/api/auth/logout',
   '/api/setup',
   '/api/settings', // GET /api/settings is used to check setup status
+  '/api/share',
+  '/api/chunk',
 ];
 
 export async function middleware(request) {
@@ -18,7 +20,12 @@ export async function middleware(request) {
   }
 
   // Check if public path
-  if (PUBLIC_PATHS.some(path => pathname === path || pathname.startsWith(path + '/'))) {
+  const isPublic = PUBLIC_PATHS.some(path => pathname === path || pathname.startsWith(path + '/'));
+
+  // Allow /api/files/[id]/parts if accessed via share
+  const isFilePartsPublic = pathname.startsWith('/api/files/') && pathname.endsWith('/parts');
+
+  if (isPublic || isFilePartsPublic) {
     return NextResponse.next();
   }
 

@@ -1,26 +1,50 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useEncryption } from '../contexts/EncryptionContext';
 import { unwrapKey, wrapKey } from '@/lib/envelopeCipher';
 
 export default function ShareModal({ file, isOpen, onClose }) {
-    const { encryptionKey, salt } = useEncryption();
+    const { encryptionKey, salt, isUnlocked } = useEncryption();
     const [loading, setLoading] = useState(false);
     const [sharing, setSharing] = useState(false);
     const [shareUrl, setShareUrl] = useState('');
     const [password, setPassword] = useState('');
     const [usePassword, setUsePassword] = useState(false);
-    const [expiryDays, setExpiryDays] = useState('7');
+    const [expiryMinutes, setExpiryMinutes] = useState('10080');
+    const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
+    const [copied, setCopied] = useState(false);
     const [error, setError] = useState('');
+    const [mounted, setMounted] = useState(false);
 
-    if (!isOpen) return null;
+    useEffect(() => {
+        setMounted(true);
+        return () => setMounted(false);
+    }, []);
+
+    if (!isOpen || !mounted) return null;
+
+    const formatTime = (seconds) => {
+        if (seconds < 60) return `${seconds}s`;
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+    };
+
+    const estimateMigrationTime = () => {
+        const speedMBps = 2.0; // Conservative estimate: 2MB/s
+        const sizeMB = file.file_size / (1024 * 1024);
+        const seconds = Math.max(5, Math.ceil(sizeMB / speedMBps));
+        return formatTime(seconds);
+    };
 
     const handleUpgrade = async () => {
         try {
             setSharing(true);
             setError('');
             setLoading(true);
+            setShowUpgradeConfirm(false);
 
             // 1. Fetch parts
             const { fetchFilePartMetadata, createDecryptedStream } = await import('@/lib/clientDecryption');
@@ -65,6 +89,16 @@ export default function ShareModal({ file, isOpen, onClose }) {
             setSharing(true);
             setError('');
 
+            console.log('Generating share link for file:', {
+                id: file.id,
+                name: file.original_filename,
+                version: file.encryption_version,
+                hasEncryptedKey: !!file.encrypted_file_key,
+                hasKeyIv: !!file.key_iv,
+                hasEncryptionKey: !!encryptionKey,
+                hasSalt: !!salt
+            });
+
             let dek;
             if (file.encryption_version === 2) {
                 dek = await unwrapKey(file.encrypted_file_key, encryptionKey, salt, file.key_iv);
@@ -95,7 +129,7 @@ export default function ShareModal({ file, isOpen, onClose }) {
                     iv: wrapped.iv,
                     isPasswordProtected: usePassword,
                     passwordHash: passwordHash,
-                    expiryDays: parseInt(expiryDays)
+                    expiryMinutes: parseInt(expiryMinutes)
                 })
             });
 
@@ -103,6 +137,11 @@ export default function ShareModal({ file, isOpen, onClose }) {
             if (!res.ok) throw new Error(data.error);
 
             let finalUrl = data.link;
+            // Use browser origin to handle development ports correctly
+            if (typeof window !== 'undefined') {
+                finalUrl = `${window.location.origin}/share/${data.token}`;
+            }
+
             if (!usePassword) {
                 finalUrl += `#${shareKey}`;
             }
@@ -118,12 +157,13 @@ export default function ShareModal({ file, isOpen, onClose }) {
 
     const copyToClipboard = () => {
         navigator.clipboard.writeText(shareUrl);
-        alert('Copied to clipboard!');
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
 
     const isLegacy = file.encryption_version !== 2;
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
                 <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 flex items-center justify-between text-white">
@@ -144,19 +184,62 @@ export default function ShareModal({ file, isOpen, onClose }) {
                             <p className="text-gray-600 font-bold italic animate-pulse">Upgrading security vault...</p>
                         </div>
                     ) : isLegacy ? (
-                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center">
-                            <div className="text-4xl mb-4">🛡️</div>
-                            <h3 className="text-lg font-bold text-amber-900 mb-2">Upgrade Required</h3>
-                            <p className="text-amber-700 text-sm mb-6">
-                                This file uses our old encryption system. To share it securely without sharing your master password, we need to upgrade it once.
-                            </p>
-                            {error && <p className="text-red-600 text-xs mb-4 font-bold">⚠️ {error}</p>}
-                            <button
-                                className="bg-amber-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-amber-700 transition-all shadow-lg active:scale-95"
-                                onClick={handleUpgrade}
-                            >
-                                {sharing ? 'Upgrading...' : 'Upgrade & Share'}
-                            </button>
+                        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-8 text-center animate-in fade-in zoom-in duration-300">
+                            {!showUpgradeConfirm ? (
+                                <>
+                                    <div className="text-5xl mb-6">🛡️</div>
+                                    <h3 className="text-xl font-bold text-amber-900 mb-2">Security Upgrade Required</h3>
+                                    <p className="text-amber-800 text-sm mb-8 leading-relaxed">
+                                        This file uses our legacy encryption system. To enable instant secure sharing, we need to perform a one-time security upgrade.
+                                    </p>
+                                    <button
+                                        disabled={!isUnlocked}
+                                        className="w-full bg-amber-600 text-white px-6 py-4 rounded-2xl font-black text-lg hover:bg-amber-700 transition-all shadow-xl shadow-amber-600/20 active:scale-95 disabled:opacity-50 disabled:grayscale"
+                                        onClick={() => setShowUpgradeConfirm(true)}
+                                    >
+                                        {isUnlocked ? 'Upgrade This File' : 'Postponed: Unlock Vault First'}
+                                    </button>
+                                    {!isUnlocked && (
+                                        <p className="mt-4 text-[10px] font-black text-amber-600 uppercase tracking-widest animate-pulse">
+                                            ⚠️ Master Key Required
+                                        </p>
+                                    )}
+                                </>
+                            ) : (
+                                <div className="space-y-6">
+                                    <h3 className="text-lg font-bold text-amber-900">Confirm Security Upgrade</h3>
+                                    <div className="bg-white/50 rounded-2xl p-4 border border-amber-100 flex items-center justify-between text-left">
+                                        <div className="space-y-1">
+                                            <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Estimated Time</p>
+                                            <p className="text-sm font-bold text-amber-900">~ {estimateMigrationTime()}</p>
+                                        </div>
+                                        <div className="text-right space-y-1">
+                                            <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Process</p>
+                                            <p className="text-[10px] text-amber-800 font-medium">Download → Decrypt → Re-upload</p>
+                                        </div>
+                                    </div>
+
+                                    <p className="text-xs text-amber-700 italic">
+                                        Your file contents are upgraded directly in your browser. The server never sees the plaintext.
+                                    </p>
+
+                                    <div className="flex gap-3">
+                                        <button
+                                            className="flex-1 bg-white border border-amber-200 text-amber-900 px-4 py-3 rounded-xl font-bold hover:bg-amber-100 transition-colors"
+                                            onClick={() => setShowUpgradeConfirm(false)}
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            className="flex-[2] bg-amber-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-amber-700 transition-all shadow-lg active:scale-95"
+                                            onClick={handleUpgrade}
+                                        >
+                                            Start Upgrade
+                                        </button>
+                                    </div>
+                                    {error && <p className="text-red-600 text-xs font-bold">⚠️ {error}</p>}
+                                </div>
+                            )}
                         </div>
                     ) : shareUrl ? (
                         <div className="space-y-6 animate-in slide-in-from-bottom-4">
@@ -174,9 +257,18 @@ export default function ShareModal({ file, isOpen, onClose }) {
                                 />
                                 <button
                                     onClick={copyToClipboard}
-                                    className="bg-blue-600 text-white px-6 rounded-xl font-bold hover:bg-blue-700 transition-colors"
+                                    className={`${copied ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'} text-white px-6 rounded-xl font-bold transition-all flex items-center gap-2 min-w-[100px] justify-center`}
                                 >
-                                    Copy
+                                    {copied ? (
+                                        <>
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                            </svg>
+                                            <span>Done!</span>
+                                        </>
+                                    ) : (
+                                        'Copy'
+                                    )}
                                 </button>
                             </div>
                         </div>
@@ -221,13 +313,17 @@ export default function ShareModal({ file, isOpen, onClose }) {
                                     <div>
                                         <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">Expiry</label>
                                         <select
-                                            value={expiryDays}
-                                            onChange={e => setExpiryDays(e.target.value)}
+                                            value={expiryMinutes}
+                                            onChange={e => setExpiryMinutes(e.target.value)}
                                             className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500"
                                         >
-                                            <option value="1">24 Hours</option>
-                                            <option value="7">7 Days</option>
-                                            <option value="30">30 Days</option>
+                                            <option value="5">5 Minutes</option>
+                                            <option value="15">15 Minutes</option>
+                                            <option value="30">30 Minutes</option>
+                                            <option value="60">1 Hour</option>
+                                            <option value="1440">24 Hours</option>
+                                            <option value="10080">7 Days</option>
+                                            <option value="43200">30 Days</option>
                                             <option value="0">Never</option>
                                         </select>
                                     </div>
@@ -240,17 +336,27 @@ export default function ShareModal({ file, isOpen, onClose }) {
                                 </div>
                             )}
 
+                            {!isUnlocked && (
+                                <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-3 text-amber-800 animate-in fade-in slide-in-from-top-4">
+                                    <div className="text-2xl">🔒</div>
+                                    <div className="text-xs font-medium leading-relaxed">
+                                        Vault is Locked. You must <span className="font-black underline italic">Unlock</span> before you can generate secure sharing links.
+                                    </div>
+                                </div>
+                            )}
+
                             <button
                                 onClick={handleShare}
-                                disabled={sharing || (usePassword && !password)}
-                                className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98] disabled:opacity-50"
+                                disabled={sharing || !isUnlocked || (usePassword && !password)}
+                                className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98] disabled:opacity-50 disabled:grayscale"
                             >
-                                {sharing ? 'Generating...' : 'Generate Secure Link'}
+                                {sharing ? 'Generating...' : isUnlocked ? 'Generate Secure Link' : 'Unlock Vault to Share'}
                             </button>
                         </div>
                     )}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

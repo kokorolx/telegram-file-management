@@ -1,20 +1,22 @@
 'use client';
 
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useEffect, useState } from 'react';
+import { useEncryption } from '../contexts/EncryptionContext';
+import {
+    fetchFilePartMetadata,
+    fetchAndDecryptFullFile,
+    createDecryptedStream
+} from '@/lib/clientDecryption';
+import { getSecureImage, cacheSecureImage, blobCache } from '@/lib/secureImageCache';
 import Lightbox from 'yet-another-react-lightbox';
-import Video from 'yet-another-react-lightbox/plugins/video';
+import Thumbnails from 'yet-another-react-lightbox/plugins/thumbnails';
 import Zoom from 'yet-another-react-lightbox/plugins/zoom';
 import Slideshow from 'yet-another-react-lightbox/plugins/slideshow';
-import Thumbnails from 'yet-another-react-lightbox/plugins/thumbnails';
+import Video from 'yet-another-react-lightbox/plugins/video';
 import 'yet-another-react-lightbox/styles.css';
 import 'yet-another-react-lightbox/plugins/thumbnails.css';
 
-import { useEncryption } from '../contexts/EncryptionContext';
-import { blobCache } from '@/lib/secureImageCache';
-import { fetchAndDecryptFullFile, fetchFilePartMetadata } from '@/lib/clientDecryption';
-
-// Helper function to get file icon based on mime type (copied from PreviewModal)
 function getFileIcon(mimeType, filename) {
   if (!mimeType && !filename) return '📄';
   const type = (mimeType || '').toLowerCase();
@@ -58,7 +60,15 @@ function getFileTypeName(mimeTypeOrFilename) {
   return 'File';
 }
 
-export default function FileLightbox({ file, isOpen, onClose, onDecryptionError, customKey }) {
+export default function FileLightbox({
+    file,
+    isOpen,
+    onClose,
+    onDecryptionError,
+    customKey,
+    shareToken = null,
+    initialParts = null
+}) {
   const { encryptionKey: globalKey, isUnlocked: globalUnlocked, unlock } = useEncryption();
 
   const encryptionKey = customKey || globalKey;
@@ -68,6 +78,7 @@ export default function FileLightbox({ file, isOpen, onClose, onDecryptionError,
   const [error, setError] = useState(null);
   const [mounted, setMounted] = useState(false);
   const [inputPassword, setInputPassword] = useState('');
+  const isFetchingRef = useRef(false);
 
   useEffect(() => {
     setMounted(true);
@@ -87,7 +98,9 @@ export default function FileLightbox({ file, isOpen, onClose, onDecryptionError,
   }, [isOpen, file, isUnlocked]);
 
   const loadContent = async () => {
+    if (isFetchingRef.current) return;
     try {
+      isFetchingRef.current = true;
       setLoading(true);
       setError(null);
 
@@ -101,8 +114,8 @@ export default function FileLightbox({ file, isOpen, onClose, onDecryptionError,
           setLoading(false);
           return;
         }
-        const parts = await fetchFilePartMetadata(file.id);
-        const blob = await fetchAndDecryptFullFile(file, encryptionKey, parts);
+        const parts = initialParts || await fetchFilePartMetadata(file.id, shareToken);
+        const blob = await fetchAndDecryptFullFile(file, encryptionKey, parts, shareToken, !!customKey);
 
         // Force MIME type for PDF/Audio if needed
         let mimeType = blob.type;
@@ -171,6 +184,7 @@ export default function FileLightbox({ file, isOpen, onClose, onDecryptionError,
       }
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
   };
 

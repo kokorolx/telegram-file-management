@@ -16,6 +16,7 @@ export default function GuestSharePage() {
     const [needsPassword, setNeedsPassword] = useState(false);
     const [shareKey, setShareKey] = useState('');
     const [decryptedKey, setDecryptedKey] = useState(null);
+    const [parts, setParts] = useState([]);
     const [showLightbox, setShowLightbox] = useState(false);
 
     const fetchShareMetadata = useCallback(async () => {
@@ -28,6 +29,7 @@ export default function GuestSharePage() {
 
             setFile(data.file);
             setNeedsPassword(data.isPasswordProtected);
+            setParts(data.parts || []);
 
             // If not password protected and we have the hash key, attempt instant decryption
             const hash = window.location.hash.slice(1);
@@ -79,19 +81,13 @@ export default function GuestSharePage() {
             });
 
             if (!verifyRes.ok) throw new Error('Incorrect password');
+            const data = await verifyRes.json();
 
             // 2. Unwrap DEK with password
-            // We need to re-fetch metadata to get the wrappedKey/IV if we didn't store it
-            const res = await fetch(`/api/share/${token}`);
-            const data = await res.json();
-
             const dek = await unwrapKey(data.wrappedKey, password, 'sharing-salt', data.keyIv);
             setDecryptedKey(dek);
-            setFile(prev => ({
-                ...prev,
-                encrypted_file_key: data.wrappedKey,
-                key_iv: data.keyIv
-            }));
+            setFile(data.file);
+            setParts(data.parts || []);
             setNeedsPassword(false);
         } catch (err) {
             setError(err.message);
@@ -197,6 +193,8 @@ export default function GuestSharePage() {
                     isOpen={showLightbox}
                     onClose={() => setShowLightbox(false)}
                     customKey={decryptedKey}
+                    shareToken={token}
+                    initialParts={parts}
                     onDecryptionError={(err) => {
                         console.error('Share decryption error:', err);
                         alert('Check your password or link. Decryption failed.');

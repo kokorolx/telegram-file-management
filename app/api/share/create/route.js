@@ -20,7 +20,7 @@ export async function POST(request) {
       iv,
       isPasswordProtected,
       passwordHash,
-      expiryDays
+      expiryMinutes
     } = body;
 
     // 1. Verify file exists and belongs to user
@@ -34,9 +34,9 @@ export async function POST(request) {
 
     // 3. Calculate expiry
     let expiresAt = null;
-    if (expiryDays) {
+    if (expiryMinutes && parseInt(expiryMinutes) > 0) {
       expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + parseInt(expiryDays));
+      expiresAt.setMinutes(expiresAt.getMinutes() + parseInt(expiryMinutes));
     }
 
     // 4. Create Shared Link
