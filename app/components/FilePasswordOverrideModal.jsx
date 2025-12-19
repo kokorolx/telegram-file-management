@@ -35,7 +35,7 @@ export default function FilePasswordOverrideModal({
       const parts = await fetchFilePartMetadata(file.id);
 
       // 3. Verify key
-      const isValid = await verifyFileKey(file.id, key, parts);
+      const isValid = await verifyFileKey(file, key, parts);
 
       if (isValid) {
         onSuccess(key, password);

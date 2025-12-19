@@ -2,12 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2025-12-19] - Secure Sharing & Envelope Encryption
 
 ### Added
+- **Envelope Encryption Architecture** - Migrated from "Direct Encryption" to "Envelope Encryption" (DEK-KEK model). Each file now has a unique Data Encryption Key (DEK), providing significantly better security and instant sharing.
+- **Secure Instant Sharing** - Users can now generate secret sharing links instantly (no re-encryption required). Supports custom passwords and automatic expiration (1, 7, 30 days).
+- **Public Guest Share Page** - Secure interface for recipients to decrypt and preview shared files using secret URL tokens or passwords without an account.
+- **Legacy Migration System** - One-click "Security Upgrade" for existing files to bridge them from the old encryption model to the new Envelope model.
+- **Optimized Key Derivation** - Drastically improved performance by reusing pre-derived master key bits from the context, eliminating redundant PBKDF2 iterations during sharing and preview.
 - **BigInt Support for Large Files** - Updated DB schema to handle file sizes exceeding 2.1GB (switched `INTEGER` to `BIGINT`).
 - **Fresh Logout Policy** - UI now completely hides and clears all files, folders, and metadata when the user logs out.
 - **Auto-Locking Vault** - Encryption vault now automatically locks and revokes all in-memory decrypted blobs (videos, images) on logout.
+
+### Changed
+- **Shared Link Persistence** - New `SharedLink` entity and repository for managing sharing metadata and usage stats.
+- **Core Decryption Logic** - Unified `getDEK` helper added to handle both legacy (Direct) and new (Envelope) encryption versions seamlessly.
+- **Thumbnail Rendering** - `SecureImage` and `FileCardThumbnail` now use the Envelope model for faster rendering of encrypted previews.
 
 ### Fixed
 - **Upload Race Condition** - Ensured sequential processing of the first file chunk to prevent "Failed to create or retrieve file" errors during parallel uploads.
@@ -148,5 +158,5 @@ All notable changes to this project will be documented in this file.
 - [ ] Add batch operations (multi-select delete/move)
 - [ ] Add more granular upload progress tracking
 - [ ] Implement upload resume capability
-- [ ] Add file sharing with expiring links
+- [x] Add file sharing with expiring links
 - [ ] Add file versioning

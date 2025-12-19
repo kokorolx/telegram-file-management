@@ -81,7 +81,7 @@ export default function SecureImage({ file, className, alt, ...props }) {
         const parts = await fetchFilePartMetadata(file.id);
 
         // 2. Fetch and decrypt all chunks in parallel (with concurrency limit in utility)
-        const blob = await fetchAndDecryptFullFile(file.id, encryptionKey, parts);
+        const blob = await fetchAndDecryptFullFile(file, encryptionKey, parts);
 
         const url = URL.createObjectURL(blob);
 

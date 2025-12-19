@@ -11,9 +11,25 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request, { params }) {
   try {
-    // Verify authentication
+    // Verify authentication OR valid share token
     const auth = await requireAuth(request);
-    if (!auth.authenticated) {
+    const { searchParams } = new URL(request.url);
+    const shareToken = searchParams.get('share_token');
+
+    let isAuthorized = auth.authenticated;
+
+    if (!isAuthorized && shareToken) {
+        const { sharedLinkRepository } = await import('@/lib/repositories/SharedLinkRepository');
+        const sharedLink = await sharedLinkRepository.findByToken(shareToken);
+        if (sharedLink && sharedLink.file_id === params.id) {
+            // Check expiry
+            if (!sharedLink.expires_at || new Date(sharedLink.expires_at) > new Date()) {
+                isAuthorized = true;
+            }
+        }
+    }
+
+    if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

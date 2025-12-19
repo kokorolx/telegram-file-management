@@ -340,7 +340,8 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
       }
       if (videoSrc) URL.revokeObjectURL(videoSrc);
     };
-  }, [fileId, encryptionKey, mimeType, fetchAndDecryptChunk, appendToSourceBuffer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileId, encryptionKey, masterPassword, mimeType, fetchAndDecryptChunk, appendToSourceBuffer]);
 
   // Cleanup
   useEffect(() => {

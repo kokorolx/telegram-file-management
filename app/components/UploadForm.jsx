@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
+'use client';
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
 
 import { useEncryption } from '../contexts/EncryptionContext';
 import PasswordPromptModal from './PasswordPromptModal';
@@ -97,7 +98,17 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
     console.log(`[UPLOAD] ${fileId} - Cancelled and removed from queue`);
   };
 
-  const uploadFile = async (fileItem, password) => {
+
+  const updateFileStatus = useCallback((id, status, progress, error = null, stage = '') => {
+    setQueue(prev => prev.map(f => {
+      if (f.id === id) {
+        return { ...f, status, progress, error, progressStage: stage };
+      }
+      return f;
+    }));
+  }, []);
+
+  const uploadFile = useCallback(async (fileItem, password) => {
      // const startTime = Date.now();
      console.log(`[UPLOAD] ${fileItem.id} - Starting upload: ${fileItem.file.name}`);
      console.log(`[UPLOAD] ${fileItem.id} - Password provided: ${password ? 'YES' : 'NO'}`);
@@ -149,7 +160,7 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
         updateFileStatus(fileItem.id, 'error', 0, err.message);
       }
     }
-  };
+  }, [currentFolderId, onFileUploaded, updateFileStatus]);
 
   // Process queue
   useEffect(() => {
@@ -183,16 +194,7 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
     if (queue.some(f => f.status === 'pending')) {
       processQueue();
     }
-  }, [queue, currentFolderId, onFileUploaded, isUnlocked, masterPassword, unlock, showPasswordPrompt]);
-
-  const updateFileStatus = (id, status, progress, error = null, stage = '') => {
-    setQueue(prev => prev.map(f => {
-      if (f.id === id) {
-        return { ...f, status, progress, error, progressStage: stage };
-      }
-      return f;
-    }));
-  };
+  }, [queue, isUnlocked, masterPassword, showPasswordPrompt, uploadFile]);
 
   const handleDragEnter = (e) => {
     e.preventDefault();

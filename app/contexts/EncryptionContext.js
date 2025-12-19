@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { clearSecureCache } from '@/lib/secureImageCache';
 import { deriveEncryptionKeyBrowser } from '@/lib/clientDecryption';
 import { useUser } from './UserContext';
@@ -14,13 +14,21 @@ export function EncryptionProvider({ children }) {
   const [salt, setSalt] = useState(null);
   const [isUnlocked, setIsUnlocked] = useState(false);
 
+  const lock = useCallback(() => {
+    setMasterPassword(null);
+    setEncryptionKey(null);
+    setSalt(null);
+    setIsUnlocked(false);
+    clearSecureCache();
+  }, []);
+
   // Auto-lock on logout
   useEffect(() => {
     if (!user && isUnlocked) {
       console.log('User logged out, locking vault and clearing cache...');
       lock();
     }
-  }, [user]);
+  }, [user, isUnlocked, lock]);
 
   // ... beforeunload effect ...
   useEffect(() => {
@@ -45,14 +53,6 @@ export function EncryptionProvider({ children }) {
       console.error('Failed to derive encryption key:', err);
       throw err;
     }
-  };
-
-  const lock = () => {
-    setMasterPassword(null);
-    setEncryptionKey(null);
-    setSalt(null);
-    setIsUnlocked(false);
-    clearSecureCache();
   };
 
   return (

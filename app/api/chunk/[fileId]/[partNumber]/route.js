@@ -12,9 +12,27 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request, { params }) {
   try {
-    // Verify authentication
+    // Verify authentication OR valid share token
     const auth = await requireAuth(request);
-    if (!auth.authenticated) {
+    const { searchParams } = new URL(request.url);
+    const shareToken = searchParams.get('share_token');
+
+    let isAuthorized = auth.authenticated;
+    let authorizedUserId = auth.user?.id;
+
+    if (!isAuthorized && shareToken) {
+        const { sharedLinkRepository } = await import('@/lib/repositories/SharedLinkRepository');
+        const sharedLink = await sharedLinkRepository.findByToken(shareToken);
+        if (sharedLink && sharedLink.file_id === params.fileId) {
+            // Check expiry
+            if (!sharedLink.expires_at || new Date(sharedLink.expires_at) > new Date()) {
+                isAuthorized = true;
+                authorizedUserId = sharedLink.user_id; // Use owner's ID for Telegram access
+            }
+        }
+    }
+
+    if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -61,7 +79,7 @@ export async function GET(request, { params }) {
     }
 
     // Fetch encrypted blob from Telegram
-    const dlUrl = await getFileDownloadUrl(file.user_id, part.telegram_file_id);
+    const dlUrl = await getFileDownloadUrl(authorizedUserId || file.user_id, part.telegram_file_id);
     const telegramResponse = await fetch(dlUrl, { next: { revalidate: 0 } });
 
     if (!telegramResponse.ok) {

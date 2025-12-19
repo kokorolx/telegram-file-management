@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { useEncryption } from '../contexts/EncryptionContext';
 
@@ -21,11 +21,7 @@ export default function SetupModal({ onSetupComplete, refreshTrigger }) {
   const { user } = useUser();
   const { unlock } = useEncryption();
 
-  useEffect(() => {
-    checkSetup();
-  }, [user, refreshTrigger]);
-
-  async function checkSetup() {
+  const checkSetup = useCallback(async () => {
     try {
       const response = await fetch('/api/settings');
       const data = await response.json();
@@ -45,7 +41,11 @@ export default function SetupModal({ onSetupComplete, refreshTrigger }) {
       console.error('Error checking setup:', err);
       // Fallback: only show if we are really sure or if setup might be missing
     }
-  }
+  }, [user]);
+
+  useEffect(() => {
+    checkSetup();
+  }, [checkSetup, refreshTrigger]);
 
   async function handleSetup(e) {
     e.preventDefault();

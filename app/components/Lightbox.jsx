@@ -102,7 +102,7 @@ export default function FileLightbox({ file, isOpen, onClose, onDecryptionError,
           return;
         }
         const parts = await fetchFilePartMetadata(file.id);
-        const blob = await fetchAndDecryptFullFile(file.id, encryptionKey, parts);
+        const blob = await fetchAndDecryptFullFile(file, encryptionKey, parts);
 
         // Force MIME type for PDF/Audio if needed
         let mimeType = blob.type;

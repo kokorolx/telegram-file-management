@@ -3,6 +3,7 @@ import { formatFileSize, getFileExtension } from '@/lib/utils';
 import Lightbox from './Lightbox';
 import FileCardThumbnail from './FileCardThumbnail';
 import FilePasswordOverrideModal from './FilePasswordOverrideModal';
+import ShareModal from './ShareModal';
 import { useEncryption } from '../contexts/EncryptionContext';
 import { blobCache } from '@/lib/secureImageCache'; // Add import
 
@@ -18,6 +19,7 @@ export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMe
   const [moving, setMoving] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [folders, setFolders] = useState([]); // To populate move modal if needed
+  const [showShareModal, setShowShareModal] = useState(false);
 
   const fileExt = getFileExtension(file.original_filename);
   // ... date logic ...
@@ -41,7 +43,7 @@ export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMe
       setError(null);
       const { fetchFilePartMetadata, fetchAndDecryptFullFile } = await import('@/lib/clientDecryption');
       const parts = await fetchFilePartMetadata(file.id);
-      const blob = await fetchAndDecryptFullFile(file.id, key, parts);
+      const blob = await fetchAndDecryptFullFile(file, key, parts);
 
       const url = window.URL.createObjectURL(blob);
 
@@ -189,6 +191,18 @@ export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMe
               </svg>
             </button>
           )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowShareModal(true);
+            }}
+            className="bg-white text-gray-800 p-2 rounded-full shadow-lg hover:bg-blue-50 hover:text-blue-600 transition-all transform hover:scale-110"
+            title="Share"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+            </svg>
+          </button>
           {(!file.is_encrypted || masterPassword) && (
           <button
             onClick={handleDownload}
@@ -255,6 +269,12 @@ export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMe
           setFileKey(key);
           setShowFullscreen(true);
         }}
+      />
+
+      <ShareModal
+        file={file}
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
       />
     </div>
   );

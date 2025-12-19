@@ -31,7 +31,10 @@ export async function POST(request) {
       total_parts,
       encrypted_data,
       original_filename,
-      chunk_size
+      chunk_size,
+      encrypted_file_key,
+      key_iv,
+      encryption_version
     } = body;
 
     // Basic Validation
