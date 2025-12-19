@@ -4,8 +4,9 @@ import { fileService } from '@/lib/fileService';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request, { params }) {
+  const { id } = await params;
   try {
-    const file = await fileService.getFileById(params.id);
+    const file = await fileService.getFileById(id);
 
     if (!file) {
       return NextResponse.json(
@@ -28,8 +29,8 @@ export async function GET(request, { params }) {
 }
 
 export async function PUT(request, { params }) {
+  const { id } = await params;
   try {
-    const { id } = params;
     const body = await request.json();
     const { folder_id } = body;
 
@@ -63,8 +64,9 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
+  const { id } = await params;
   try {
-    const file = await fileService.getFileById(params.id);
+    const file = await fileService.getFileById(id);
 
     if (!file) {
       return NextResponse.json(
@@ -73,7 +75,7 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    await fileService.deleteFile(params.id);
+    await fileService.deleteFile(id);
 
     return NextResponse.json({
       success: true,

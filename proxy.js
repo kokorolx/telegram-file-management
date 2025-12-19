@@ -11,7 +11,7 @@ const PUBLIC_PATHS = [
   '/api/chunk',
 ];
 
-export async function middleware(request) {
+export async function proxy(request) {
   const { pathname } = request.nextUrl;
 
   // Only run on API routes

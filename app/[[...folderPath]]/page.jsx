@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, use } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import FileList from '../components/FileList';
 import UploadForm from '../components/UploadForm';
@@ -19,7 +19,8 @@ import { useMultiSelect } from '../hooks/useMultiSelect';
 import { useMoveContextMenu } from '../hooks/useMoveContextMenu';
 import MoveItemsDialog from '../components/MoveItemsDialog';
 
-export default function Home({ params }) {
+export default function Home({ params: paramsPromise }) {
+  const params = use(paramsPromise);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, logout, checkAuth } = useUser();

@@ -10,11 +10,8 @@ export const dynamic = 'force-dynamic';
  * Get detailed statistics for a specific folder.
  */
 export async function GET(request, { params }) {
+  const { folderId } = await params;
   try {
-    const auth = await requireAuth(request);
-    if (!auth.authenticated) return NextResponse.json({ error: auth.error }, { status: 401 });
-
-    const { folderId } = params;
 
     // Verify folder belongs to user
     const folder = await folderService.getFolderById(folderId);

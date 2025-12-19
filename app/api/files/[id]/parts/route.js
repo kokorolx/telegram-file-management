@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
  * Returns metadata about file parts for browser-side decryption.
  */
 export async function GET(request, { params }) {
+  const { id } = await params;
   try {
     // Verify authentication OR valid share token
     const auth = await requireAuth(request);
@@ -21,7 +22,7 @@ export async function GET(request, { params }) {
     if (!isAuthorized && shareToken) {
         const { sharedLinkRepository } = await import('@/lib/repositories/SharedLinkRepository');
         const sharedLink = await sharedLinkRepository.findByToken(shareToken);
-        if (sharedLink && sharedLink.file_id === params.id) {
+        if (sharedLink && sharedLink.file_id === id) {
             // Check expiry
             if (!sharedLink.expires_at || new Date(sharedLink.expires_at) > new Date()) {
                 isAuthorized = true;
@@ -33,7 +34,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const fileId = params.id;
+    const fileId = id;
     if (!fileId) {
       return NextResponse.json({ error: 'Missing file ID' }, { status: 400 });
     }

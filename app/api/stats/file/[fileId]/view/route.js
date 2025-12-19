@@ -8,11 +8,8 @@ import { requireAuth } from '@/lib/apiAuth';
  * Increment view count for a specific file.
  */
 export async function POST(request, { params }) {
+  const { fileId } = await params;
   try {
-    const auth = await requireAuth(request);
-    if (!auth.authenticated) return NextResponse.json({ error: auth.error }, { status: 401 });
-
-    const { fileId } = params;
 
     // Verify file belongs to user
     const file = await fileService.getFileById(fileId);

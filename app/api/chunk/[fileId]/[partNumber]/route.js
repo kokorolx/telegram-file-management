@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
  * Returns encrypted chunk data for client-side decryption.
  */
 export async function GET(request, { params }) {
+  const { fileId, partNumber: partNumberParam } = await params;
   try {
     // Verify authentication OR valid share token
     const auth = await requireAuth(request);
@@ -23,7 +24,7 @@ export async function GET(request, { params }) {
     if (!isAuthorized && shareToken) {
         const { sharedLinkRepository } = await import('@/lib/repositories/SharedLinkRepository');
         const sharedLink = await sharedLinkRepository.findByToken(shareToken);
-        if (sharedLink && sharedLink.file_id === params.fileId) {
+        if (sharedLink && sharedLink.file_id === fileId) {
             // Check expiry
             if (!sharedLink.expires_at || new Date(sharedLink.expires_at) > new Date()) {
                 isAuthorized = true;
@@ -36,8 +37,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const fileId = params.fileId;
-    const partNumber = parseInt(params.partNumber, 10);
+    const partNumber = parseInt(partNumberParam, 10);
 
     // Validate parameters
     if (!fileId || isNaN(partNumber)) {

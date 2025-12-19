@@ -27,7 +27,7 @@ export async function POST(request) {
     const sessionData = JSON.stringify({ id: user.id, username: user.username });
     const encoded = Buffer.from(sessionData).toString('base64');
 
-    cookies().set('session_user', encoded, {
+    (await cookies()).set('session_user', encoded, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',

@@ -6,11 +6,8 @@ import { requireAuth } from '@/lib/apiAuth';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request, { params }) {
+  const { botId } = await params;
   try {
-    const auth = await requireAuth(request);
-    if (!auth.authenticated) return NextResponse.json({ error: auth.error }, { status: 401 });
-
-    const { botId } = params;
 
     // Verify bot belongs to user
     const bot = await userBotRepository.findByIdAndUser(botId, auth.user.id);

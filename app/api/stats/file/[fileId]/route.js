@@ -10,11 +10,8 @@ export const dynamic = 'force-dynamic';
  * Get detailed statistics for a specific file.
  */
 export async function GET(request, { params }) {
+  const { fileId } = await params;
   try {
-    const auth = await requireAuth(request);
-    if (!auth.authenticated) return NextResponse.json({ error: auth.error }, { status: 401 });
-
-    const { fileId } = params;
 
     // Verify file belongs to user
     const file = await fileService.getFileById(fileId);

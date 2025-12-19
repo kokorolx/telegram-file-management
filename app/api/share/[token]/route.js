@@ -3,8 +3,8 @@ import { sharedLinkRepository } from '@/lib/repositories/SharedLinkRepository';
 import { fileRepository } from '@/lib/repositories/FileRepository';
 
 export async function GET(request, { params }) {
+  const { token } = await params;
   try {
-    const { token } = params;
 
     // 1. Find shared link
     const sharedLink = await sharedLinkRepository.findByToken(token);
@@ -52,8 +52,8 @@ export async function GET(request, { params }) {
  * Verification route for password protected links
  */
 export async function POST(request, { params }) {
+  const { token } = await params;
   try {
-    const { token } = params;
     const { passwordHash } = await request.json();
 
     const sharedLink = await sharedLinkRepository.findByToken(token);

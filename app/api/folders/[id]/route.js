@@ -8,8 +8,8 @@ export const dynamic = 'force-dynamic';
  * Get folder details.
  */
 export async function GET(request, { params }) {
+  const { id } = await params;
   try {
-    const { id } = params;
     const folder = await folderService.getFolderById(id);
 
     if (!folder) {
@@ -37,8 +37,8 @@ export async function GET(request, { params }) {
  * Rename or move a folder.
  */
 export async function PUT(request, { params }) {
+  const { id } = await params;
   try {
-    const { id } = params;
     const { name, parent_id } = await request.json();
 
     if ((!name || !name.trim()) && parent_id === undefined) {
@@ -83,8 +83,8 @@ export async function PUT(request, { params }) {
  * Delete a folder. Subfolders and files are moved to the parent folder.
  */
 export async function DELETE(request, { params }) {
+  const { id } = await params;
   try {
-    const { id } = params;
     const success = await folderService.deleteFolder(id);
 
     if (!success) {
