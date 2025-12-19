@@ -58,8 +58,11 @@ function getFileTypeName(mimeTypeOrFilename) {
   return 'File';
 }
 
-export default function FileLightbox({ file, isOpen, onClose, onDecryptionError }) {
-  const { encryptionKey, isUnlocked, unlock } = useEncryption();
+export default function FileLightbox({ file, isOpen, onClose, onDecryptionError, customKey }) {
+  const { encryptionKey: globalKey, isUnlocked: globalUnlocked, unlock } = useEncryption();
+
+  const encryptionKey = customKey || globalKey;
+  const isUnlocked = !!customKey || globalUnlocked;
   const [slides, setSlides] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -216,8 +219,14 @@ export default function FileLightbox({ file, isOpen, onClose, onDecryptionError 
         <div className="fixed inset-0 z-[99999] bg-black/80 flex items-center justify-center p-4">
           <div className="bg-white p-8 rounded-2xl shadow-2xl text-center max-w-sm w-full animate-fade-in">
             <div className="text-6xl mb-6">🔒</div>
-            <h3 className="text-xl font-bold mb-3 text-gray-900">Encrypted File</h3>
-            <p className="text-gray-500 mb-6 font-medium">Please enter your master password to preview this file.</p>
+            <h3 className="text-xl font-bold mb-3 text-gray-900">Unlock Vault</h3>
+            <p className="text-gray-500 mb-6 font-medium text-sm">
+              Please enter your <strong>Current Master Password</strong> to unlock the vault.
+              <br/><br/>
+              <span className="text-xs opacity-80">
+                (If this file uses a legacy password, you will be prompted for it after unlocking)
+              </span>
+            </p>
             <form onSubmit={handleUnlock} className="space-y-4">
               <input
                 type="password"

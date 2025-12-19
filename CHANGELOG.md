@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - **Video Decryption Error** - Fixed `CryptoKey` type mismatch in the browser.
 - **Multi-Bot Resolution** - Correctly threaded `userId` through `fileService.js` to ensure files reach the correct Telegram bot.
 - **Login UI not updating** - Fixed race condition where username wasn't displayed after login until page refresh.
+- **Legacy Password Preview** - Fixed issue where legacy-encrypted files triggered a download on unlock instead of previewing, and clarified unlock instructions.
 
 ---
 

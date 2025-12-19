@@ -12,6 +12,7 @@ export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMe
   const [downloading, setDownloading] = useState(false);
   const [showPasswordOverride, setShowPasswordOverride] = useState(false);
   const [error, setError] = useState(null);
+  const [fileKey, setFileKey] = useState(null);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false); // Add move modal state if we want to add a move button
   const [moving, setMoving] = useState(false);
@@ -89,7 +90,7 @@ export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMe
       }
 
       if (file.is_encrypted) {
-        await performDecryptionAndDownload(encryptionKey);
+        await performDecryptionAndDownload(fileKey || encryptionKey);
       } else {
         setDownloading(true);
         setError(null);
@@ -243,6 +244,7 @@ export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMe
           setShowFullscreen(false);
           setShowPasswordOverride(true);
         }}
+        customKey={fileKey}
       />
 
       <FilePasswordOverrideModal
@@ -250,7 +252,8 @@ export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMe
         file={file}
         onClose={() => setShowPasswordOverride(false)}
         onSuccess={(key) => {
-          performDecryptionAndDownload(key);
+          setFileKey(key);
+          setShowFullscreen(true);
         }}
       />
     </div>

@@ -17,6 +17,7 @@ export default function FileRow({ file, onFileDeleted, onContextMenu, onFileMove
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState(null);
+  const [fileKey, setFileKey] = useState(null);
 
   const fileExt = getFileExtension(file.original_filename);
   // ... date ...
@@ -84,7 +85,7 @@ export default function FileRow({ file, onFileDeleted, onContextMenu, onFileMove
       }
 
       if (file.is_encrypted) {
-        await performDecryptionAndDownload(encryptionKey);
+        await performDecryptionAndDownload(fileKey || encryptionKey);
       } else {
         setDownloading(true);
         const response = await fetch(`/api/download?file_id=${encodeURIComponent(file.id)}`);
@@ -289,6 +290,7 @@ export default function FileRow({ file, onFileDeleted, onContextMenu, onFileMove
           setShowFullscreen(false);
           setShowPasswordOverride(true);
         }}
+        customKey={fileKey}
       />
 
       <FilePasswordOverrideModal
@@ -296,7 +298,8 @@ export default function FileRow({ file, onFileDeleted, onContextMenu, onFileMove
         file={file}
         onClose={() => setShowPasswordOverride(false)}
         onSuccess={(key) => {
-          performDecryptionAndDownload(key);
+          setFileKey(key);
+          setShowFullscreen(true);
         }}
       />
 
