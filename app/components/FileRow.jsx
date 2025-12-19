@@ -1,9 +1,8 @@
-'use client';
-
 import { useState } from 'react';
 import { formatFileSize, getFileExtension } from '@/lib/utils';
 import Lightbox from './Lightbox';
 import FileCardThumbnail from './FileCardThumbnail';
+import FilePasswordOverrideModal from './FilePasswordOverrideModal';
 import { useEncryption } from '../contexts/EncryptionContext';
 import { blobCache } from '@/lib/secureImageCache'; // Add import
 
@@ -13,6 +12,7 @@ export default function FileRow({ file, onFileDeleted, onContextMenu, onFileMove
   const [downloading, setDownloading] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
+  const [showPasswordOverride, setShowPasswordOverride] = useState(false);
   const [folders, setFolders] = useState([]);
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [moving, setMoving] = useState(false);
@@ -27,6 +27,40 @@ export default function FileRow({ file, onFileDeleted, onContextMenu, onFileMove
   });
 
   const isPreviewable = true; // All files can now be opened in unified Lightbox (with fallbacks)
+
+  const performDecryptionAndDownload = async (key) => {
+    try {
+      setDownloading(true);
+      const { fetchFilePartMetadata, fetchAndDecryptFullFile } = await import('@/lib/clientDecryption');
+      const parts = await fetchFilePartMetadata(file.id);
+      const blob = await fetchAndDecryptFullFile(file.id, key, parts);
+
+      const url = window.URL.createObjectURL(blob);
+
+      // Cache if encrypted
+      if (file.is_encrypted) {
+        blobCache.set(file.id, { url, timestamp: Date.now() });
+      }
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.original_filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      await fetch(`/api/stats/file/${file.id}/download`, { method: 'POST' });
+    } catch (err) {
+      console.error('Decryption/Download error:', err);
+      if (err.message.includes('decrypt') || err.message.includes('auth')) {
+        setShowPasswordOverride(true);
+      } else {
+        alert('Download failed: ' + err.message);
+      }
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const handleDownload = async (e) => {
     e.stopPropagation();
@@ -49,38 +83,27 @@ export default function FileRow({ file, onFileDeleted, onContextMenu, onFileMove
           return;
       }
 
-      setDownloading(true);
-
-      let blob;
       if (file.is_encrypted) {
-           const { fetchFilePartMetadata, fetchAndDecryptFullFile } = await import('@/lib/clientDecryption');
-           const parts = await fetchFilePartMetadata(file.id);
-           blob = await fetchAndDecryptFullFile(file.id, encryptionKey, parts);
+        await performDecryptionAndDownload(encryptionKey);
       } else {
-           const response = await fetch(`/api/download?file_id=${encodeURIComponent(file.id)}`);
-           if (!response.ok) throw new Error('Failed to download');
-           blob = await response.blob();
+        setDownloading(true);
+        const response = await fetch(`/api/download?file_id=${encodeURIComponent(file.id)}`);
+        if (!response.ok) throw new Error('Failed to download');
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.original_filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        await fetch(`/api/stats/file/${file.id}/download`, { method: 'POST' });
+        setDownloading(false);
       }
-      const url = window.URL.createObjectURL(blob);
-
-      // Cache if encrypted
-      if (file.is_encrypted) {
-           blobCache.set(file.id, { url, timestamp: Date.now() });
-      }
-
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.original_filename;
-      document.body.appendChild(a);
-      a.click();
-      if (!file.is_encrypted) window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      await fetch(`/api/stats/file/${file.id}/download`, { method: 'POST' });
     } catch (err) {
       console.error('Download error:', err);
       alert('Download failed');
-    } finally {
       setDownloading(false);
     }
   };
@@ -262,6 +285,19 @@ export default function FileRow({ file, onFileDeleted, onContextMenu, onFileMove
         file={file}
         isOpen={showFullscreen}
         onClose={() => setShowFullscreen(false)}
+        onDecryptionError={() => {
+          setShowFullscreen(false);
+          setShowPasswordOverride(true);
+        }}
+      />
+
+      <FilePasswordOverrideModal
+        isOpen={showPasswordOverride}
+        file={file}
+        onClose={() => setShowPasswordOverride(false)}
+        onSuccess={(key) => {
+          performDecryptionAndDownload(key);
+        }}
       />
 
       {showMoveModal && (

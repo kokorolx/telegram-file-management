@@ -1,16 +1,16 @@
-'use client';
-
 import { useState } from 'react';
 import { formatFileSize, getFileExtension } from '@/lib/utils';
 import Lightbox from './Lightbox';
 import FileCardThumbnail from './FileCardThumbnail';
+import FilePasswordOverrideModal from './FilePasswordOverrideModal';
 import { useEncryption } from '../contexts/EncryptionContext';
 import { blobCache } from '@/lib/secureImageCache'; // Add import
 
 export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMenu }) {
-  const { masterPassword, unlock } = useEncryption(); // Assuming unlock might trigger UI in future, or we check isUnlocked
+  const { masterPassword, encryptionKey, isUnlocked } = useEncryption(); // Assuming unlock might trigger UI in future, or we check isUnlocked
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [showPasswordOverride, setShowPasswordOverride] = useState(false);
   const [error, setError] = useState(null);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false); // Add move modal state if we want to add a move button
@@ -34,10 +34,44 @@ export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMe
   // Preview button shows for all file types (media + PDF + unsupported file type thumbnails)
   const isPreviewable = true;
 
+  const performDecryptionAndDownload = async (key) => {
+    try {
+      setDownloading(true);
+      setError(null);
+      const { fetchFilePartMetadata, fetchAndDecryptFullFile } = await import('@/lib/clientDecryption');
+      const parts = await fetchFilePartMetadata(file.id);
+      const blob = await fetchAndDecryptFullFile(file.id, key, parts);
+
+      const url = window.URL.createObjectURL(blob);
+
+      // Cache if encrypted
+      if (file.is_encrypted) {
+        blobCache.set(file.id, { url, timestamp: Date.now() });
+      }
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.original_filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      await fetch(`/api/stats/file/${file.id}/download`, { method: 'POST' });
+    } catch (err) {
+      console.error('Decryption/Download error:', err);
+      if (err.message.includes('decrypt') || err.message.includes('auth')) {
+        setShowPasswordOverride(true);
+      } else {
+        setError('Download failed: ' + err.message);
+      }
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const handleDownload = async () => {
     try {
-      if (file.is_encrypted && !masterPassword) {
-          // Should be hidden by UI, but double check
+      if (file.is_encrypted && !isUnlocked) {
           alert("Please unlock with Master Password first (Top Menu)");
           return;
       }
@@ -54,44 +88,28 @@ export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMe
           return;
       }
 
-      setDownloading(true);
-      setError(null);
-
-      let response;
       if (file.is_encrypted) {
-           response = await fetch('/api/download', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ file_id: file.id, master_password: masterPassword })
-           });
+        await performDecryptionAndDownload(encryptionKey);
       } else {
-           response = await fetch(`/api/download?file_id=${encodeURIComponent(file.id)}`);
+        setDownloading(true);
+        setError(null);
+        const response = await fetch(`/api/download?file_id=${encodeURIComponent(file.id)}`);
+        if (!response.ok) throw new Error('Failed to download file');
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.original_filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        await fetch(`/api/stats/file/${file.id}/download`, { method: 'POST' });
+        setDownloading(false);
       }
-
-      if (!response.ok) {
-        throw new Error('Failed to download file');
-      }
-
-      // Create a blob and download
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-
-      // Cache if encrypted
-      if (file.is_encrypted) {
-           blobCache.set(file.id, { url, timestamp: Date.now() });
-      }
-
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.original_filename;
-      document.body.appendChild(a);
-      a.click();
-      if (!file.is_encrypted) window.URL.revokeObjectURL(url); // Don't revoke encrypted as we cached it
-      document.body.removeChild(a);
     } catch (err) {
       setError(err.message);
       console.error('Download error:', err);
-    } finally {
       setDownloading(false);
     }
   };
@@ -221,6 +239,19 @@ export default function FileCard({ file, onFileDeleted, onFileMoved, onContextMe
         file={file}
         isOpen={showFullscreen}
         onClose={() => setShowFullscreen(false)}
+        onDecryptionError={() => {
+          setShowFullscreen(false);
+          setShowPasswordOverride(true);
+        }}
+      />
+
+      <FilePasswordOverrideModal
+        isOpen={showPasswordOverride}
+        file={file}
+        onClose={() => setShowPasswordOverride(false)}
+        onSuccess={(key) => {
+          performDecryptionAndDownload(key);
+        }}
       />
     </div>
   );

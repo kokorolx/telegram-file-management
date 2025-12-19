@@ -58,7 +58,7 @@ function getFileTypeName(mimeTypeOrFilename) {
   return 'File';
 }
 
-export default function FileLightbox({ file, isOpen, onClose }) {
+export default function FileLightbox({ file, isOpen, onClose, onDecryptionError }) {
   const { encryptionKey, isUnlocked, unlock } = useEncryption();
   const [slides, setSlides] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -157,7 +157,15 @@ export default function FileLightbox({ file, isOpen, onClose }) {
 
     } catch (err) {
       console.error('Lightbox load error:', err);
-      setError(err.message);
+      if (err.message.includes('decrypt') || err.message.includes('auth')) {
+        if (onDecryptionError) {
+          onDecryptionError(err);
+        } else {
+          setError('Decryption failed. Your master password may be incorrect for this file.');
+        }
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }

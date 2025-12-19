@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import ResetMasterPasswordModal from './ResetMasterPasswordModal';
 
 export default function PasswordPromptModal({ isOpen, onSubmit, onCancel, isLoading, fileName, onFileNameChange }) {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
+  const [showResetModal, setShowResetModal] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -83,6 +85,16 @@ export default function PasswordPromptModal({ isOpen, onSubmit, onCancel, isLoad
               disabled={isLoading}
             />
             {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
+
+            <div className="mt-2 text-right">
+              <button
+                type="button"
+                onClick={() => setShowResetModal(true)}
+                className="text-xs text-blue-600 hover:text-blue-800 font-medium underline underline-offset-2"
+              >
+                Forgot master password?
+              </button>
+            </div>
           </div>
 
           <div className="flex gap-3">
@@ -108,6 +120,14 @@ export default function PasswordPromptModal({ isOpen, onSubmit, onCancel, isLoad
           </div>
         </form>
       </div>
+
+      <ResetMasterPasswordModal
+        isOpen={showResetModal}
+        onClose={() => setShowResetModal(false)}
+        onResetComplete={() => {
+          alert('Master password reset successful. Please use your new master password to proceed.');
+        }}
+      />
     </div>
   );
 }
