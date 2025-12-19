@@ -73,7 +73,7 @@ export default function FilePasswordOverrideModal({
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl">
             <p className="text-sm text-blue-800 font-medium">
-              Your current master password couldn't decrypt <strong>{file.original_filename}</strong>.
+              Your current master password could not decrypt <strong>{file.original_filename}</strong>.
               This file might have been encrypted with an older password.
             </p>
           </div>
