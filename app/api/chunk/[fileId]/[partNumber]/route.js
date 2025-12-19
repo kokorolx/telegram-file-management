@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getFileById, getFileParts } from '@/lib/db';
+import { fileService } from '@/lib/fileService';
 import { getFileDownloadUrl } from '@/lib/telegram';
 import { requireAuth } from '@/lib/auth';
 
@@ -8,18 +8,7 @@ export const dynamic = 'force-dynamic';
 /**
  * GET /api/chunk/[fileId]/[partNumber]
  *
- * Returns encrypted chunk data with IV and auth tag for client-side decryption
- * Server does NOT decrypt - only fetches encrypted blob from Telegram
- *
- * Response format:
- * {
- *   encrypted_data: "base64-encoded-encrypted-bytes",
- *   iv: "hex-encoded-iv",
- *   auth_tag: "hex-encoded-auth-tag",
- *   part_number: 1,
- *   size: 2097152,
- *   total_parts: 5
- * }
+ * Returns encrypted chunk data for client-side decryption.
  */
 export async function GET(request, { params }) {
   try {
@@ -41,7 +30,7 @@ export async function GET(request, { params }) {
     }
 
     // Get file metadata
-    const file = await getFileById(fileId);
+    const file = await fileService.getFileById(fileId);
     if (!file) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 });
     }
@@ -55,7 +44,7 @@ export async function GET(request, { params }) {
     }
 
     // Get all parts to find the requested one
-    const parts = await getFileParts(fileId);
+    const parts = await fileService.getFileParts(fileId);
     if (parts.length === 0) {
       return NextResponse.json(
         { error: 'No file parts found' },
@@ -72,21 +61,15 @@ export async function GET(request, { params }) {
     }
 
     // Fetch encrypted blob from Telegram
-    // This is the ENCRYPTED data - we do NOT decrypt on server
     const dlUrl = await getFileDownloadUrl(file.user_id, part.telegram_file_id);
     const telegramResponse = await fetch(dlUrl, { next: { revalidate: 0 } });
 
     if (!telegramResponse.ok) {
-      throw new Error(
-        `Failed to fetch from Telegram: HTTP ${telegramResponse.status}`
-      );
+      throw new Error(`Failed to fetch from Telegram: HTTP ${telegramResponse.status}`);
     }
 
-    // Get encrypted buffer (NOT decrypted)
     const encryptedBuffer = Buffer.from(await telegramResponse.arrayBuffer());
 
-    // Return RAW binary data
-    // Client already has metadata (IV, auth_tag) from /api/files/[id]/parts
     return new NextResponse(encryptedBuffer, {
       status: 200,
       headers: {

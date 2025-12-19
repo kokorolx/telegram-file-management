@@ -200,7 +200,7 @@ export default function LandingPage() {
                     <span className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center font-bold text-emerald-600">2</span>
                     Zero-Knowledge Architecture
                   </h3>
-                  <p className="text-slate-600 ml-13">We cannot access your files. Even our servers don't know what you're storing.</p>
+                  <p className="text-slate-600 ml-13">We cannot access your files. Even our servers don&apos;t know what you&apos;re storing.</p>
                 </div>
 
                 <div className="space-y-3">
@@ -260,7 +260,7 @@ export default function LandingPage() {
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="mt-1">✓</span>
-                      <span><strong>Data Minimization</strong> - We only store what's necessary</span>
+                      <span><strong>Data Minimization</strong> - We only store what&apos;s necessary</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="mt-1">✓</span>
@@ -308,7 +308,7 @@ export default function LandingPage() {
           <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-12 text-white text-center">
             <h3 className="text-3xl font-bold mb-4">Self-Host Your Data</h3>
             <p className="text-lg text-slate-300 mb-8 max-w-2xl mx-auto">
-              Deploy Telegram Files Manager on your own servers. Whether it's your home lab, corporate infrastructure, or cloud provider—complete control is yours.
+              Deploy Telegram Files Manager on your own servers. Whether it&apos;s your home lab, corporate infrastructure, or cloud provider—complete control is yours.
             </p>
             <div className="bg-slate-800/50 rounded-lg p-6 font-mono text-sm text-slate-200 mb-8 max-w-2xl mx-auto overflow-x-auto">
               <p>$ git clone github.com/yourusername/telegram-files-manager</p>
@@ -486,7 +486,7 @@ export default function LandingPage() {
 
           <div className="bg-white rounded-lg border border-amber-200 p-6 text-center">
             <p className="text-sm text-amber-800 leading-relaxed">
-              This system is provided "as-is" for legitimate file storage purposes only. Users are responsible for ensuring their usage complies with all applicable laws and Telegram's terms of service. The creator and hosting provider assume no liability for data loss or misuse.
+              This system is provided &quot;as-is&quot; for legitimate file storage purposes only. Users are responsible for ensuring their usage complies with all applicable laws and Telegram&apos;s terms of service. The creator and hosting provider assume no liability for data loss or misuse.
             </p>
           </div>
         </div>
@@ -531,7 +531,7 @@ export default function LandingPage() {
         <div className="border-t border-slate-200 pt-8 text-center text-sm text-slate-600 space-y-2">
           <p>© 2025 Telegram Files Manager. Open source and MIT licensed.</p>
           <p className="text-xs">
-            Built with ❤️ by <a href="https://github.com/kokorolx" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 font-semibold">kokorolx</a> • 
+            Built with ❤️ by <a href="https://github.com/kokorolx" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 font-semibold">kokorolx</a> •
             <a href="https://thnkandgrow.com/about" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 font-semibold ml-1">Learn More</a>
           </p>
         </div>

@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server';
-import { getFolderStats, getFolderById, createFolderStats } from '@/lib/db';
+import { statsService } from '@/lib/services/StatsService';
+import { folderService } from '@/lib/services/FolderService';
 import { requireAuth } from '@/lib/apiAuth';
 
+export const dynamic = 'force-dynamic';
+
+/**
+ * GET /api/stats/folder/[folderId]
+ * Get detailed statistics for a specific folder.
+ */
 export async function GET(request, { params }) {
   try {
     const auth = await requireAuth(request);
@@ -10,7 +17,7 @@ export async function GET(request, { params }) {
     const { folderId } = params;
 
     // Verify folder belongs to user
-    const folder = await getFolderById(folderId);
+    const folder = await folderService.getFolderById(folderId);
     if (!folder) {
       return NextResponse.json({ error: 'Folder not found' }, { status: 404 });
     }
@@ -19,11 +26,11 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
-    let stats = await getFolderStats(folderId);
+    let stats = await statsService.getFolderStats(folderId);
 
     // If stats don't exist, create them
     if (!stats) {
-      stats = await createFolderStats(folderId, auth.user.id);
+      stats = await statsService.createFolderStats(folderId, auth.user.id);
     }
 
     return NextResponse.json({

@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
-import { deleteUserBot, setDefaultBot, pool } from '@/lib/db';
+import { userBotRepository } from '@/lib/repositories/UserBotRepository';
+import { filePartRepository } from '@/lib/repositories/FilePartRepository';
 import { requireAuth } from '@/lib/apiAuth';
 
+/**
+ * PATCH /api/settings/bots/[botId]
+ * Update bot name or default status.
+ */
 export async function PATCH(request, { params }) {
   try {
     const auth = await requireAuth(request);
@@ -11,39 +16,22 @@ export async function PATCH(request, { params }) {
     const { name, is_default } = await request.json();
 
     // Verify bot belongs to user
-    const botResult = await pool.query(
-      'SELECT * FROM user_bots WHERE id = $1 AND user_id = $2',
-      [botId, auth.user.id]
-    );
+    const bot = await userBotRepository.findByIdAndUser(botId, auth.user.id);
 
-    if (botResult.rows.length === 0) {
+    if (!bot) {
       return NextResponse.json({ error: 'Bot not found' }, { status: 404 });
     }
 
-    const updates = [];
-    const values = [];
-    let paramCount = 1;
-
     if (name !== undefined) {
-      updates.push(`name = $${paramCount++}`);
-      values.push(name);
+       await userBotRepository.update(botId, { name, updated_at: new Date() });
     }
 
     if (is_default !== undefined) {
       if (is_default) {
-        await setDefaultBot(auth.user.id, botId);
+        await userBotRepository.setDefaultBot(auth.user.id, botId);
       } else {
-        updates.push(`is_default = $${paramCount++}`);
-        values.push(false);
+        await userBotRepository.update(botId, { is_default: false, updated_at: new Date() });
       }
-    }
-
-    if (updates.length > 0) {
-      values.push(botId);
-      await pool.query(
-        `UPDATE user_bots SET ${updates.join(', ')} WHERE id = $${paramCount}`,
-        values
-      );
     }
 
     return NextResponse.json({ success: true, message: 'Bot updated' });
@@ -53,6 +41,10 @@ export async function PATCH(request, { params }) {
   }
 }
 
+/**
+ * DELETE /api/settings/bots/[botId]
+ * Delete a bot.
+ */
 export async function DELETE(request, { params }) {
   try {
     const auth = await requireAuth(request);
@@ -61,25 +53,17 @@ export async function DELETE(request, { params }) {
     const { botId } = params;
 
     // Verify bot belongs to user
-    const botResult = await pool.query(
-      'SELECT * FROM user_bots WHERE id = $1 AND user_id = $2',
-      [botId, auth.user.id]
-    );
+    const bot = await userBotRepository.findByIdAndUser(botId, auth.user.id);
 
-    if (botResult.rows.length === 0) {
+    if (!bot) {
       return NextResponse.json({ error: 'Bot not found' }, { status: 404 });
     }
 
     // Count files using this bot
-    const filesResult = await pool.query(
-      'SELECT COUNT(*) as count FROM file_parts WHERE bot_id = $1',
-      [botId]
-    );
+    const fileCount = await filePartRepository.countByBotId(botId);
 
-    const fileCount = parseInt(filesResult.rows[0].count) || 0;
-
-    // Delete bot (cascade will handle file_parts and bot_usage_stats)
-    await deleteUserBot(auth.user.id, botId);
+    // Delete bot (cascading deletes bot_usage_stats in DB if configured)
+    await userBotRepository.deleteBot(auth.user.id, botId);
 
     return NextResponse.json({
       success: true,

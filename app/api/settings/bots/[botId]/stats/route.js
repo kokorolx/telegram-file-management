@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getBotUsageStats, pool } from '@/lib/db';
+import { statsService } from '@/lib/services/StatsService';
+import { userBotRepository } from '@/lib/repositories/UserBotRepository';
 import { requireAuth } from '@/lib/apiAuth';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request, { params }) {
   try {
@@ -10,16 +13,13 @@ export async function GET(request, { params }) {
     const { botId } = params;
 
     // Verify bot belongs to user
-    const botResult = await pool.query(
-      'SELECT * FROM user_bots WHERE id = $1 AND user_id = $2',
-      [botId, auth.user.id]
-    );
+    const bot = await userBotRepository.findByIdAndUser(botId, auth.user.id);
 
-    if (botResult.rows.length === 0) {
+    if (!bot) {
       return NextResponse.json({ error: 'Bot not found' }, { status: 404 });
     }
 
-    const stats = await getBotUsageStats(botId);
+    const stats = await statsService.getBotUsageStats(botId);
 
     return NextResponse.json({
       success: true,

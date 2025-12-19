@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getFileById, deleteFile, moveFile } from '@/lib/db';
+import { fileService } from '@/lib/fileService';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request, { params }) {
   try {
-    const file = await getFileById(params.id);
+    const file = await fileService.getFileById(params.id);
 
     if (!file) {
       return NextResponse.json(
@@ -34,12 +36,12 @@ export async function PUT(request, { params }) {
     // Move file
     if (folder_id !== undefined) {
       // Check if file exists
-      const file = await getFileById(id);
+      const file = await fileService.getFileById(id);
       if (!file) {
         return NextResponse.json({ success: false, error: 'File not found' }, { status: 404 });
       }
 
-      await moveFile(id, folder_id);
+      await fileService.moveFile(id, folder_id);
 
       return NextResponse.json({
         success: true,
@@ -62,7 +64,7 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const file = await getFileById(params.id);
+    const file = await fileService.getFileById(params.id);
 
     if (!file) {
       return NextResponse.json(
@@ -71,7 +73,7 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    await deleteFile(params.id);
+    await fileService.deleteFile(params.id);
 
     return NextResponse.json({
       success: true,

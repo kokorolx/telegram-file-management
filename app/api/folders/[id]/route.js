@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
-import { getFolderById, renameFolder, deleteFolder, moveFolder } from '@/lib/db';
+import { folderService } from '@/lib/services/FolderService';
 
+export const dynamic = 'force-dynamic';
+
+/**
+ * GET /api/folders/[id]
+ * Get folder details.
+ */
 export async function GET(request, { params }) {
   try {
     const { id } = params;
-
-    // Get folder info
-    const folder = await getFolderById(id);
+    const folder = await folderService.getFolderById(id);
 
     if (!folder) {
       return NextResponse.json(
@@ -28,6 +32,10 @@ export async function GET(request, { params }) {
   }
 }
 
+/**
+ * PUT /api/folders/[id]
+ * Rename or move a folder.
+ */
 export async function PUT(request, { params }) {
   try {
     const { id } = params;
@@ -47,26 +55,14 @@ export async function PUT(request, { params }) {
       );
     }
 
-    // Check folder exists
-    const folder = await getFolderById(id);
-    if (!folder) {
-      return NextResponse.json(
-        { success: false, error: 'Folder not found' },
-        { status: 404 }
-      );
-    }
-
+    // Rename
     if (name) {
-       await renameFolder(id, name.trim());
+       await folderService.renameFolder(id, name.trim());
     }
 
-    // Handle move
+    // Move
     if (parent_id !== undefined) {
-       // Prevent moving folder into itself or its children ideally (not checking children for now due to complexity, but should at least check id!=parent_id)
-       if (id === parent_id) {
-          return NextResponse.json({ success: false, error: 'Cannot move folder into itself' }, { status: 400 });
-       }
-       await moveFolder(id, parent_id);
+       await folderService.moveFolder(id, parent_id);
     }
 
     return NextResponse.json({
@@ -74,32 +70,33 @@ export async function PUT(request, { params }) {
       message: 'Folder updated successfully',
     });
   } catch (error) {
-    console.error('Folder rename error:', error);
+    console.error('Folder update error:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to rename folder' },
+      { success: false, error: error.message || 'Failed to update folder' },
       { status: 500 }
     );
   }
 }
 
+/**
+ * DELETE /api/folders/[id]
+ * Delete a folder. Subfolders and files are moved to the parent folder.
+ */
 export async function DELETE(request, { params }) {
   try {
     const { id } = params;
+    const success = await folderService.deleteFolder(id);
 
-    // Check folder exists
-    const folder = await getFolderById(id);
-    if (!folder) {
+    if (!success) {
       return NextResponse.json(
         { success: false, error: 'Folder not found' },
         { status: 404 }
       );
     }
 
-    await deleteFolder(id);
-
     return NextResponse.json({
       success: true,
-      message: 'Folder deleted successfully (files moved to root)',
+      message: 'Folder deleted successfully (content moved to parent/root)',
     });
   } catch (error) {
     console.error('Folder delete error:', error);

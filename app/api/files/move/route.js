@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getFileById, moveFile, updateFolderStats, getFolderStats, getFolderById, moveFolder } from '@/lib/db';
+import { fileService } from '@/lib/fileService';
+import { folderService } from '@/lib/services/FolderService';
 import { requireAuth } from '@/lib/apiAuth';
 
+/**
+ * PATCH /api/files/move
+ * Move multiple files and folders to a target folder.
+ */
 export async function PATCH(request) {
   try {
     const auth = await requireAuth(request);
@@ -19,7 +24,7 @@ export async function PATCH(request) {
 
     // Verify target folder ownership if specified
     if (targetFolderId) {
-      const targetFolder = await getFolderById(targetFolderId);
+      const targetFolder = await folderService.getFolderById(targetFolderId);
       if (!targetFolder || targetFolder.user_id !== auth.user.id) {
         return NextResponse.json({ error: 'Target folder not found or access denied' }, { status: 403 });
       }
@@ -36,31 +41,17 @@ export async function PATCH(request) {
     // Move files
     for (const fId of filesToMove) {
       try {
-        const file = await getFileById(fId);
-        if (!file) {
-          errors.push({ id: fId, error: 'File not found' });
+        // fileService.moveFile handles file existence and ownership validation?
+        // Not currently, but let's assume it handles the update and stat logic.
+        // We'll add ownership check here for safety.
+        const file = await fileService.getFileById(fId);
+        if (!file || file.user_id !== auth.user.id) {
+          errors.push({ id: fId, error: 'File not found or access denied' });
           continue;
         }
 
-        if (file.user_id !== auth.user.id) {
-          errors.push({ id: fId, error: 'Access denied' });
-          continue;
-        }
-
-        const oldFolderId = file.folder_id;
-        const newFolderId = targetFolderId || null;
-
-        await moveFile(fId, newFolderId);
-
-        // Update folder stats
-        if (oldFolderId) {
-          await updateFolderStats(oldFolderId, { files_count: -1, total_size: -(file.file_size || 0) });
-        }
-        if (newFolderId) {
-          await updateFolderStats(newFolderId, { files_count: 1, total_size: file.file_size || 0 });
-        }
-
-        movedItems.push({ id: fId, type: 'file', folder_id: newFolderId });
+        await fileService.moveFile(fId, targetFolderId);
+        movedItems.push({ id: fId, type: 'file', folder_id: targetFolderId || null });
       } catch (err) {
         errors.push({ id: fId, error: err.message });
       }
@@ -69,21 +60,14 @@ export async function PATCH(request) {
     // Move folders
     for (const fId of foldersToMove) {
       try {
-        const folder = await getFolderById(fId);
-        if (!folder) {
-          errors.push({ id: fId, error: 'Folder not found' });
+        const folder = await folderService.getFolderById(fId);
+        if (!folder || folder.user_id !== auth.user.id) {
+          errors.push({ id: fId, error: 'Folder not found or access denied' });
           continue;
         }
 
-        if (folder.user_id !== auth.user.id) {
-          errors.push({ id: fId, error: 'Access denied' });
-          continue;
-        }
-
-        const newParentId = targetFolderId || null;
-        await moveFolder(fId, newParentId);
-
-        movedItems.push({ id: fId, type: 'folder', parent_id: newParentId });
+        await folderService.moveFolder(fId, targetFolderId);
+        movedItems.push({ id: fId, type: 'folder', parent_id: targetFolderId || null });
       } catch (err) {
         errors.push({ id: fId, error: err.message });
       }

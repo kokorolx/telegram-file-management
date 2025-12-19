@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { registerUser } from '@/lib/authService';
+import { authService } from '@/lib/authService';
 
 export async function POST(request) {
   try {
@@ -16,7 +16,7 @@ export async function POST(request) {
         return NextResponse.json({ success: false, error: 'Password must be at least 6 characters' }, { status: 400 });
     }
 
-    const user = await registerUser(username, password);
+    const user = await authService.register(username, password);
 
     return NextResponse.json({
       success: true,

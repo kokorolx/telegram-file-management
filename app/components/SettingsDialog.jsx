@@ -124,7 +124,7 @@ export default function SettingsDialog({ isOpen, onClose }) {
 
             <p className="mt-2 text-xs text-gray-400">
               This password will be used to encrypt/decrypt all future encrypted files.
-              Note: Changing it won't re-encrypt old files! (Feature limit)
+              Note: Changing it won&apos;t re-encrypt old files! (Feature limit)
             </p>
           </div>
 

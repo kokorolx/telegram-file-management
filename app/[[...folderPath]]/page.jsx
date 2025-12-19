@@ -700,14 +700,34 @@ export default function Home({ params }) {
                 <FileListSkeletonRow />
               )
             ) : folders.length === 0 && files.length === 0 && !loading ? (
-              <div className="flex flex-col items-center justify-center py-12 text-gray-500 animate-fade-in-smooth">
-                <p className="text-4xl mb-3">📭</p>
-                <p className="font-medium text-center">
-                  {searchTerm ? 'No files match your search.' : 'No files or folders yet.'}
+              <div className="flex flex-col items-center justify-center py-20 px-6 text-center animate-fade-in-smooth border-2 border-dashed border-gray-100 rounded-3xl bg-gray-50/50">
+                <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-sm ring-1 ring-blue-50">
+                  <span className="text-4xl">{searchTerm ? '🔍' : '☁️'}</span>
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  {searchTerm ? 'No matches found' : 'Your vault is empty'}
+                </h3>
+                <p className="text-gray-500 max-w-sm mb-8">
+                  {searchTerm
+                    ? `We couldn't find anything matching "${searchTerm}". Try a different search term or clear the search.`
+                    : 'Start securing your data by dragging files here, or use the upload button to select from your device.'}
                 </p>
-                <p className="text-sm mt-1">
-                  {searchTerm ? 'Try a different search term.' : 'Upload a file to get started.'}
-                </p>
+                {!searchTerm && (
+                  <div className="flex flex-col sm:flex-row items-center gap-4">
+                    <button
+                      onClick={() => uploadFormRef.current?.openFilePicker()}
+                      className="px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold text-sm shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2"
+                    >
+                      <span>📤</span> Upload your first file
+                    </button>
+                    <Link
+                      href="/landing"
+                      className="px-6 py-2.5 bg-white text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 font-bold text-sm transition-all"
+                    >
+                      Learn how it works
+                    </Link>
+                  </div>
+                )}
               </div>
             ) : (
               <>

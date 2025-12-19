@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server';
-import { v4 as uuidv4 } from 'uuid';
-import { createFolder, getFolders, getFoldersByParent, getAllFolders } from '@/lib/db';
+import { NextRequest, NextResponse } from 'next/server';
+import { folderService } from '@/lib/services/FolderService';
+import { folderRepository } from '@/lib/repositories/FolderRepository';
 import { getUserFromRequest } from '@/lib/apiAuth';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request) {
   try {
@@ -21,20 +23,17 @@ export async function GET(request) {
 
     let folders;
     if (userFolders === 'true') {
-      // Return all folders for user (for move dialog)
-      folders = await getAllFolders(user.id);
+      folders = await folderRepository.findByUserId(user.id);
       return NextResponse.json({
         success: true,
         folders: folders,
       });
     } else if (all === 'true') {
-      folders = await getAllFolders(user.id);
+      folders = await folderRepository.findByUserId(user.id);
     } else if (parentId) {
-      // Get subfolders for specific parent
-      folders = await getFoldersByParent(user.id, parentId);
+      folders = await folderService.getFolders(user.id, parentId);
     } else {
-      // Get root folders (parent_id is NULL) for current user
-      folders = await getFolders(user.id);
+      folders = await folderService.getFolders(user.id);
     }
 
     return NextResponse.json({
@@ -78,8 +77,7 @@ export async function POST(request) {
       );
     }
 
-    const folderId = uuidv4();
-    const folder = await createFolder(folderId, user.id, name.trim(), parent_id);
+    const folder = await folderService.createFolder(user.id, name.trim(), parent_id);
 
     return NextResponse.json({
       success: true,

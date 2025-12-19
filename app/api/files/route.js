@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllFiles, getFilesByFolder, getFolderByPath, getFolderById } from '@/lib/db';
+import { fileRepository } from '@/lib/repositories/FileRepository';
+import { folderRepository } from '@/lib/repositories/FolderRepository';
 import { getUserFromRequest } from '@/lib/apiAuth';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request) {
   try {
@@ -27,7 +30,7 @@ export async function GET(request) {
         if (usePath === '/') {
             folderId = null;
         } else {
-            const folder = await getFolderByPath(user.id, usePath);
+            const folder = await folderRepository.findByPath(user.id, usePath);
             if (folder) {
                 folderId = folder.id;
                 currentFolder = folder;
@@ -37,7 +40,7 @@ export async function GET(request) {
             }
         }
     } else if (folderId) {
-        currentFolder = await getFolderById(folderId);
+        currentFolder = await folderRepository.findById(folderId);
         // Verify folder belongs to user
         if (currentFolder && currentFolder.user_id !== user.id) {
           return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
@@ -48,7 +51,7 @@ export async function GET(request) {
 
     // If search is provided, we search in user's files only
     if (search.trim()) {
-      const allFiles = await getAllFiles(user.id);
+      const allFiles = await fileRepository.findByUserId(user.id);
       const searchLower = search.toLowerCase();
       files = allFiles.filter(
         (file) =>
@@ -58,7 +61,7 @@ export async function GET(request) {
       );
     } else {
       // Fetch files for specific folder (or root if null) for current user
-      files = await getFilesByFolder(user.id, folderId);
+      files = await fileRepository.findByUserAndFolder(user.id, folderId);
     }
 
     // Calculate pagination

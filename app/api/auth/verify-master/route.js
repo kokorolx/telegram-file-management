@@ -1,6 +1,6 @@
-
 import { NextResponse } from 'next/server';
-import { validateMasterPassword } from '@/lib/authService';
+import { authService } from '@/lib/authService';
+import { userRepository } from '@/lib/repositories/UserRepository';
 import { getUserFromRequest } from '@/lib/apiAuth';
 
 export async function POST(request) {
@@ -18,11 +18,10 @@ export async function POST(request) {
       return NextResponse.json({ success: false, error: 'Password required' }, { status: 400 });
     }
 
-    const isValid = await validateMasterPassword(password, userId);
+    const isValid = await authService.validateMasterPassword(password, userId);
 
     if (isValid) {
-        const { getUserById } = await import('@/lib/db');
-        const user = await getUserById(userId);
+        const user = await userRepository.findById(userId);
         return NextResponse.json({
           success: true,
           salt: user?.encryption_salt || 'telegram-file-manager-fixed-salt'

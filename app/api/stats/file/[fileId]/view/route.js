@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getFileById, incrementFileViews } from '@/lib/db';
+import { statsService } from '@/lib/services/StatsService';
+import { fileService } from '@/lib/fileService';
 import { requireAuth } from '@/lib/apiAuth';
 
+/**
+ * POST /api/stats/file/[fileId]/view
+ * Increment view count for a specific file.
+ */
 export async function POST(request, { params }) {
   try {
     const auth = await requireAuth(request);
@@ -10,7 +15,7 @@ export async function POST(request, { params }) {
     const { fileId } = params;
 
     // Verify file belongs to user
-    const file = await getFileById(fileId);
+    const file = await fileService.getFileById(fileId);
     if (!file) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 });
     }
@@ -19,7 +24,7 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
-    await incrementFileViews(fileId);
+    await statsService.incrementFileView(fileId, auth.user.id);
 
     return NextResponse.json({ success: true, message: 'View tracked' });
   } catch (error) {

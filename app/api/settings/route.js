@@ -1,22 +1,22 @@
 import { NextResponse } from 'next/server';
-import { saveSettings, getSettings, updateUserMasterPasswordHash, getUserById, saveUserSettings, addBotToUser } from '@/lib/db';
+import { settingRepository } from '@/lib/repositories/SettingRepository';
+import { userRepository } from '@/lib/repositories/UserRepository';
+import { userBotRepository } from '@/lib/repositories/UserBotRepository';
+import { authService } from '@/lib/authService';
 import { getUserFromRequest } from '@/lib/apiAuth';
+import { randomBytes } from 'crypto';
+
+export const dynamic = 'force-dynamic';
 
 const SETUP_TOKEN = process.env.SETUP_TOKEN || 'default-setup-token';
 
+/**
+ * POST /api/settings
+ * Initial setup of global settings and master password.
+ */
 export async function POST(request) {
   try {
     const { botToken, userId, setupToken, useDefault, masterPassword } = await request.json();
-
-    // Validate setup token ONLY if not using default
-    // Rationale: If using default, we rely on server env which is already secure access.
-    // However, to prevent random resets, we might still want it?
-    // User asked "Why do we need setup token?".
-    // Answer: To secure the /api/settings endpoint so random people can't overwrite your bot config.
-    // BUT if `useDefault` is true, we are just telling it to use what's already in the .env.
-    // Is that destructive? Yes, it overwrites DB.
-    // But if .env is set, it's the source of truth anyway.
-    // Let's relax the requirement for `useDefault` flow to simplify UX as requested.
 
     if (!useDefault && setupToken !== SETUP_TOKEN) {
       return NextResponse.json(
@@ -40,7 +40,6 @@ export async function POST(request) {
         }
     }
 
-    // Validate inputs
     if (!finalBotToken || !finalUserId) {
       return NextResponse.json(
         { success: false, error: 'Bot token and user ID are required' },
@@ -49,10 +48,10 @@ export async function POST(request) {
     }
 
     if (!masterPassword) {
-         return NextResponse.json(
-            { success: false, error: 'Master Password is required for encryption setup.' },
-            { status: 400 }
-         );
+      return NextResponse.json(
+        { success: false, error: 'Master Password is required for encryption setup.' },
+        { status: 400 }
+      );
     }
 
     const user = getUserFromRequest(request);
@@ -63,23 +62,20 @@ export async function POST(request) {
         );
     }
 
-    // Save settings
-    await saveSettings(finalBotToken, finalUserId);
+    // 1. Save global settings
+    await settingRepository.saveSettings(finalBotToken, finalUserId);
 
-    // Generate a unique salt for this user's encryption
-    const { randomBytes } = await import('crypto');
+    // 2. Setup Master Password
     const encryptionSalt = randomBytes(16).toString('hex');
+    const hash = await authService.generateMasterPasswordHash(masterPassword);
+    await userRepository.updateMasterPassword(user.id, hash, encryptionSalt);
 
-    // Save Master Password to USER
-    const { setMasterPassword, encryptSystemData } = await import('@/lib/authService');
-    const hash = await setMasterPassword(masterPassword);
-    await updateUserMasterPasswordHash(user.id, hash, encryptionSalt);
-
-    // Also save per-user encrypted telegram settings (primary bot)
-    await addBotToUser(user.id, {
+    // 3. Save primary bot to user (encrypted)
+    await userBotRepository.saveBot(user.id, {
         name: 'Primary Bot',
-        botToken: encryptSystemData(finalBotToken),
-        tgUserId: encryptSystemData(finalUserId)
+        botToken: authService.encryptSystemData(finalBotToken),
+        tgUserId: authService.encryptSystemData(finalUserId),
+        isDefault: true
     });
 
     return NextResponse.json({
@@ -96,23 +92,26 @@ export async function POST(request) {
   }
 }
 
+/**
+ * GET /api/settings
+ * Check setup status and get user encryption salt.
+ */
 export async function GET(request) {
   try {
-    // Check if setup is complete (don't expose actual values)
-    const settings = await getSettings();
+    const settings = await settingRepository.getSettings();
     const user = getUserFromRequest(request);
 
     let hasMasterPassword = false;
     let encryptionSalt = null;
     if (user?.id) {
-        const userRecord = await getUserById(user.id);
+        const userRecord = await userRepository.findById(user.id);
         hasMasterPassword = !!userRecord?.master_password_hash;
         encryptionSalt = userRecord?.encryption_salt;
     }
 
     return NextResponse.json({
       success: true,
-      setupComplete: !!settings?.telegram_bot_token && !!settings?.telegram_user_id,
+      setupComplete: await settingRepository.isSetupComplete(),
       hasMasterPassword: hasMasterPassword,
       encryptionSalt: encryptionSalt
     });
@@ -125,6 +124,10 @@ export async function GET(request) {
   }
 }
 
+/**
+ * PUT /api/settings
+ * Update master password and optionally secondary bot info.
+ */
 export async function PUT(request) {
   try {
     const body = await request.json();
@@ -135,11 +138,9 @@ export async function PUT(request) {
         return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
 
-    // Check if user already has a master password
-    const userRecord = await getUserById(user.id);
+    const userRecord = await userRepository.findById(user.id);
     const hasExistingMaster = !!userRecord?.master_password_hash;
 
-    // Validate setup token ONLY if they are trying to CHANGE an existing master password
     if (hasExistingMaster && setupToken !== SETUP_TOKEN) {
       return NextResponse.json(
         { success: false, error: 'Setup token is required to update an existing master password' },
@@ -154,45 +155,15 @@ export async function PUT(request) {
       );
     }
 
-    // Hash and save
-    // Actually authService.setMasterPassword currently returns hash, doesn't save?
-    // Let's check authService.js again.
-    // It returns hash. We need to save it.
-    // Wait, authService.setMasterPassword calls bcrypt but I didn't implement save helper inside it?
-    // I put a comment "I will have to add updateMasterPasswordHash to db.js".
-    // I did add `updateMasterPasswordHash` to `db.js`.
-    // So I should use the db function.
-
-    // Let's use bcrypt directly here or use authService?
-    // authService.setMasterPassword(password) returns hash.
-    // implementation in authService.js:
-    /*
-    export async function setMasterPassword(password, botToken, userId) {
-      const salt = await bcrypt.genSalt(10);
-      const hash = await bcrypt.hash(password, salt);
-      return hash;
-    }
-    */
-    // It accepts botToken etc which are unused.
-
-    // Correct usage handled above (user already fetched)
-    // Move on to generation...
-
-    // Generate a unique salt for this user's encryption
-    const { randomBytes } = await import('crypto');
     const encryptionSalt = randomBytes(16).toString('hex');
+    const hash = await authService.generateMasterPasswordHash(masterPassword);
+    await userRepository.updateMasterPassword(user.id, hash, encryptionSalt);
 
-    const { setMasterPassword, encryptSystemData } = await import('@/lib/authService');
-    const hash = await setMasterPassword(masterPassword);
-
-    await updateUserMasterPasswordHash(user.id, hash, encryptionSalt);
-
-    // If they provided botToken/userId, save them too (encrypted)
     if (botToken && tgUserId) {
-        await addBotToUser(user.id, {
+        await userBotRepository.saveBot(user.id, {
             name: 'Primary Bot',
-            botToken: encryptSystemData(botToken),
-            tgUserId: encryptSystemData(tgUserId)
+            botToken: authService.encryptSystemData(botToken),
+            tgUserId: authService.encryptSystemData(tgUserId)
         });
     }
 

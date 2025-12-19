@@ -292,7 +292,7 @@ export default function MoveItemsDialog({
                     <>
                         <div className="flex items-center gap-2">
                              <span>Move to</span>
-                             <span className="opacity-80">"{breadcrumbs[breadcrumbs.length - 1]?.name || 'My Files'}"</span>
+                             <span className="opacity-80">&quot;{breadcrumbs[breadcrumbs.length - 1]?.name || 'My Files'}&quot;</span>
                         </div>
                         {selectedFolders.has(browserFolderId) && (
                             <span className="text-[10px] text-yellow-200 font-medium">⚠️ Cannot move a folder into itself</span>

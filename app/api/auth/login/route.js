@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { loginUser } from '@/lib/authService';
+import { authService } from '@/lib/authService';
 
 export async function POST(request) {
   try {
@@ -14,8 +14,8 @@ export async function POST(request) {
     }
 
     // Authenticate user with username/password
-    const user = await loginUser(username, password);
-    
+    const user = await authService.login(username, password);
+
     if (!user) {
       return NextResponse.json(
         { success: false, error: 'Invalid credentials' },
@@ -26,7 +26,7 @@ export async function POST(request) {
     // Set session cookie with user info
     const sessionData = JSON.stringify({ id: user.id, username: user.username });
     const encoded = Buffer.from(sessionData).toString('base64');
-    
+
     cookies().set('session_user', encoded, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
