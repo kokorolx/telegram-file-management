@@ -56,7 +56,8 @@ export async function GET(request, { params }) {
       part_number: part.part_number,
       size: part.size,
       iv: part.iv,
-      auth_tag: part.auth_tag
+      auth_tag: part.auth_tag,
+      is_compressed: part.is_compressed
     }));
 
     return NextResponse.json({ parts }, {
