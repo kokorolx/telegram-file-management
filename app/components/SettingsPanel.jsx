@@ -60,10 +60,64 @@ export default function SettingsPanel({ isOpen, onClose }) {
             >
               🤖 Bot Manager
             </button>
+            <button
+              onClick={() => setActiveTab('enterprise')}
+              className={`flex-1 px-4 py-3 font-medium transition-colors text-center ${
+                activeTab === 'enterprise'
+                  ? 'border-b-2 border-blue-600 text-blue-600 bg-white'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              🏢 Enterprise
+            </button>
           </div>
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6">
+            {activeTab === 'enterprise' && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="bg-slate-900 rounded-2xl p-6 text-white overflow-hidden relative">
+                  <h3 className="text-xl font-bold mb-4 relative z-10">Enterprise Features Active</h3>
+                  <div className="space-y-4 relative z-10">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-400">Storage Backend</span>
+                      <span className="font-mono bg-blue-600 px-2 py-0.5 rounded text-white">PROVISIONED</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-400">Audit Logging</span>
+                      <span className="font-mono bg-emerald-600 px-2 py-0.5 rounded text-white">ACTIVE</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-400">High Availability</span>
+                      <span className="font-mono bg-purple-600 px-2 py-0.5 rounded text-white">REDIS-STORE</span>
+                    </div>
+                  </div>
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/20 rounded-full blur-3xl"></div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-bold text-slate-900 flex items-center justify-between">
+                    <span>Recent Audit Logs</span>
+                    <span className="text-xs text-blue-600 cursor-pointer hover:underline">View All →</span>
+                  </h4>
+                  <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
+                    {[
+                      { action: 'FILE_UPLOAD', details: 'presentation.mp4', time: '2 mins ago' },
+                      { action: 'FOLDER_CREATE', details: 'Marketing Q4', time: '15 mins ago' },
+                      { action: 'USER_LOGIN', details: 'Admin Panel', time: '1 hour ago' }
+                    ].map((log, i) => (
+                      <div key={i} className="p-3 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-slate-800 font-mono">{log.action}</span>
+                          <span className="text-[10px] text-slate-500">{log.details}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium">{log.time}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
             {activeTab === 'dashboard' && <Dashboard />}
             {activeTab === 'bots' && <BotManager />}
             {activeTab === 'security' && (

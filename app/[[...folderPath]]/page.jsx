@@ -606,6 +606,12 @@ export default function Home({ params: paramsPromise }) {
               >
                 Learn More
               </Link>
+              <Link
+                href="/pricing"
+                className="px-8 py-3 bg-white text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 font-semibold transition-all"
+              >
+                Pricing
+              </Link>
           </div>
         </div>
       ) : (
@@ -726,6 +732,12 @@ export default function Home({ params: paramsPromise }) {
                       className="px-6 py-2.5 bg-white text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 font-bold text-sm transition-all"
                     >
                       Learn how it works
+                    </Link>
+                    <Link
+                      href="/pricing"
+                      className="px-6 py-2.5 bg-white text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 font-bold text-sm transition-all"
+                    >
+                      Pricing
                     </Link>
                   </div>
                 )}

@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { fileService } from '@/lib/fileService';
-import { sendFileToTelegram } from '@/lib/telegram';
+import { storageProvider } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/upload/chunk
  *
- * Receive encrypted file chunk from browser and persist via FileService.
+ * Receive encrypted file chunk from browser and persist via storage abstraction.
  */
 export async function POST(request) {
   try {
@@ -32,10 +32,6 @@ export async function POST(request) {
       encrypted_data,
       original_filename,
       chunk_size,
-      encrypted_file_key,
-      key_iv,
-      encryption_version,
-      is_compressed
     } = body;
 
     // Basic Validation
@@ -43,20 +39,21 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Step 1: Upload encrypted chunk to Telegram
-    let telegramFileId;
+    // Step 1: Upload encrypted chunk to selected storage provider
+    let storageId;
     try {
       const encryptedBuffer = Buffer.from(encrypted_data, 'base64');
-      telegramFileId = await sendFileToTelegram(userId, encryptedBuffer, `${original_filename}_part_${part_number}`);
+      storageId = await storageProvider.uploadChunk(userId, encryptedBuffer, `${original_filename}_part_${part_number}`);
     } catch (err) {
-      console.error(`Failed to upload chunk ${part_number} to Telegram:`, err);
-      return NextResponse.json({ error: `Telegram upload failed: ${err.message}` }, { status: 500 });
+      console.error(`Failed to upload chunk ${part_number} to storage:`, err);
+      return NextResponse.json({ error: `Storage upload failed: ${err.message}` }, { status: 500 });
     }
 
     // Step 2: Persist metadata and handle stats via FileService
+    // Note: We still use 'telegram_file_id' in the payload for database compatibility
     const { fileRecord, isLastChunk } = await fileService.handleUploadChunk(userId, {
       ...body,
-      telegram_file_id: telegramFileId
+      telegram_file_id: storageId
     });
 
     if (isLastChunk) {
