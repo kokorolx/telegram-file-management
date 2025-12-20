@@ -12,6 +12,8 @@ export const dynamic = 'force-dynamic';
 export async function GET(request, { params }) {
   const { folderId } = await params;
   try {
+    const auth = requireAuth(request);
+    if (!auth.authenticated) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
 
     // Verify folder belongs to user
     const folder = await folderService.getFolderById(folderId);

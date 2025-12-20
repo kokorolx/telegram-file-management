@@ -1,8 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import PublicHeader from '../components/PublicHeader';
+import PublicFooter from '../components/PublicFooter';
+import ContactForm from '../components/ContactForm';
+import { useRouter } from 'next/navigation';
+import { config } from '@/lib/config';
 
 export default function PricingPage() {
+  const router = useRouter();
   const tiers = [
     {
       name: 'Free',
@@ -29,7 +35,7 @@ export default function PricingPage() {
     {
       name: 'Self-host',
       tagline: 'Pro Capabilities',
-      price: '$19',
+      price: '$0',
       unit: '/month',
       description: 'For power users needing media streaming.',
       features: [
@@ -53,6 +59,7 @@ export default function PricingPage() {
       features: [
         'Everything in Self-host',
         'Bot Persistence (S3 Hybrid)',
+        'Resumable Uploads',
         'Redis-backed HA Scaling',
         'Audit Logs & Compliance',
         'Role-Based Access (RBAC)',
@@ -60,10 +67,10 @@ export default function PricingPage() {
         'White-label Options',
       ],
       cta: 'Contact Sales',
-      href: 'mailto:enterprise@telegramvault.com',
+      href: '#contact',
       featured: false,
     },
-  ];
+  ] // .filter(tier => config.isEnterprise || tier.name !== 'Business');
 
   return (
     <div className="min-h-screen bg-[#050505] text-white selection:bg-blue-500/30">
@@ -74,26 +81,7 @@ export default function PricingPage() {
       </div>
 
       {/* Navigation */}
-      <nav className="fixed top-0 w-full bg-black/40 backdrop-blur-xl border-b border-white/5 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link href="/landing" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform">
-              <span className="text-xl">🔒</span>
-            </div>
-            <div className="flex flex-col">
-              <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">Telegram Vault</h1>
-              <p className="text-[10px] uppercase tracking-widest text-blue-400 font-bold">Pricing</p>
-            </div>
-          </Link>
-          <div className="hidden md:flex items-center gap-8">
-            <Link href="/landing#features" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Features</Link>
-            <Link href="/pricing" className="text-sm font-bold text-blue-400">Pricing</Link>
-            <Link href="/" className="px-5 py-2.5 bg-white text-black rounded-full font-bold text-sm hover:bg-blue-50 transition-all active:scale-95 shadow-xl shadow-white/5">
-              Launch App
-            </Link>
-          </div>
-        </div>
-      </nav>
+      <PublicHeader onLaunch={() => router.push('/')} activePage="pricing" />
 
       <main className="relative pt-32 pb-20 px-6">
         <div className="max-w-7xl mx-auto">
@@ -200,10 +188,10 @@ export default function PricingPage() {
               <div className="space-y-8">
                 <div className="grid gap-6">
                   {[
-                    { q: 'Is my data really unlimited?', a: 'Yes. We utilize the Telegram Bot API which currently allows unlimited storage for files up to 2GB each.' },
+                    { q: 'Is my data really unlimited?', a: 'Yes. We provide truly unlimited storage and unlimited upload sizes. By leveraging Telegram\'s massive infrastructure, we ensure your vault has no artificial caps—store as much as you want, with files of any size.' },
                     { q: 'How does the S3 persistence work?', a: 'In the Business plan, we mirror file metadata and optionally the files themselves to your S3 bucket, ensuring availability even if a bot is restricted.' },
                     { q: 'Can I self-host the video streaming?', a: 'The Self-host tier is designed exactly for that. You provide the server, and we provide the optimized streaming engine.' }
-                  ].map((faq, i) => (
+                  ].filter(faq => config.isEnterprise || (!faq.a.includes('Business') && !faq.a.includes('Enterprise'))).map((faq, i) => (
                     <div key={i} className="group cursor-pointer">
                       <h5 className="font-bold text-lg text-white group-hover:text-blue-400 transition-colors mb-2">Q: {faq.q}</h5>
                       <p className="text-gray-400 text-sm leading-relaxed">{faq.a}</p>
@@ -213,34 +201,18 @@ export default function PricingPage() {
               </div>
             </div>
           </div>
+          {/* Contact Section */}
+          <div id="contact" className="mt-40">
+             <div className="text-center mb-16 space-y-4">
+                <h3 className="text-4xl font-bold">Still have <span className="text-blue-500">questions?</span></h3>
+                <p className="text-gray-400 font-medium">Our security engineers are ready to assist with your specific needs.</p>
+             </div>
+             <ContactForm />
+          </div>
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-white/5 py-16 px-6 bg-black">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-10">
-          <div className="flex flex-col items-center md:items-start gap-4">
-            <Link href="/landing" className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center">
-                <span className="text-sm">🔒</span>
-              </div>
-              <span className="font-bold text-lg tracking-tight">Telegram Vault</span>
-            </Link>
-            <p className="text-xs text-gray-500 max-w-xs text-center md:text-left font-medium">
-              Revolutionizing privacy through decentralized storage and zero-knowledge architecture.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-8 text-xs font-bold uppercase tracking-widest text-gray-500">
-            <Link href="/landing" className="hover:text-white transition">Product</Link>
-            <Link href="/pricing" className="text-blue-500">Pricing</Link>
-            <a href="https://github.com/kokorolx" target="_blank" rel="noopener noreferrer" className="hover:text-white transition">Source Code</a>
-            <Link href="/" className="hover:text-white transition">Try Demo</Link>
-          </div>
-          <div className="text-[10px] text-gray-600 font-bold tracking-widest uppercase">
-            © 2025 ALL RIGHTS RESERVED.
-          </div>
-        </div>
-      </footer>
+      <PublicFooter />
     </div>
   );
 }

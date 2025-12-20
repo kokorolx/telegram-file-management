@@ -12,6 +12,8 @@ export const dynamic = 'force-dynamic';
 export async function GET(request, { params }) {
   const { fileId } = await params;
   try {
+    const auth = requireAuth(request);
+    if (!auth.authenticated) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
 
     // Verify file belongs to user
     const file = await fileService.getFileById(fileId);

@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-telegram_vault}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-telegram_vault}?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      - IS_ENTERPRISE=${IS_ENTERPRISE:-true}
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-TELEGRAM}
+      - TG_BOT_TOKEN=${TG_BOT_TOKEN}
+      - TG_USER_ID=${TG_USER_ID}
+    depends_on:
+      - db
+      - redis
+    command: npm start
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-telegram_vault}?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      - IS_ENTERPRISE=${IS_ENTERPRISE:-true}
+    depends_on:
+      - db
+      - redis
+    # Overriding the command to start the worker instead of the web server
+    # Note: We need a script to entry the worker if it's not part of the main app start
+    command: node scripts/start-worker.js
+
+volumes:
+  postgres_data:
+  redis_data:

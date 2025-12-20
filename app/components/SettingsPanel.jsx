@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Dashboard from './Dashboard';
 import BotManager from './BotManager';
 import ResetMasterPasswordModal from './ResetMasterPasswordModal';
+import { config } from '@/lib/config';
 
 export default function SettingsPanel({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -60,16 +61,18 @@ export default function SettingsPanel({ isOpen, onClose }) {
             >
               🤖 Bot Manager
             </button>
-            <button
-              onClick={() => setActiveTab('enterprise')}
-              className={`flex-1 px-4 py-3 font-medium transition-colors text-center ${
-                activeTab === 'enterprise'
-                  ? 'border-b-2 border-blue-600 text-blue-600 bg-white'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              🏢 Enterprise
-            </button>
+            {config.isEnterprise && (
+              <button
+                onClick={() => setActiveTab('enterprise')}
+                className={`flex-1 px-4 py-3 font-medium transition-colors text-center ${
+                  activeTab === 'enterprise'
+                    ? 'border-b-2 border-blue-600 text-blue-600 bg-white'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                🏢 Enterprise
+              </button>
+            )}
           </div>
 
           {/* Content */}

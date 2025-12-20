@@ -10,6 +10,9 @@ import { requireAuth } from '@/lib/apiAuth';
 export async function PATCH(request, { params }) {
   const { botId } = await params;
   try {
+    const auth = await requireAuth(request);
+    if (!auth.authenticated) return NextResponse.json({ error: auth.error }, { status: 401 });
+
     const { name, is_default } = await request.json();
 
     // Verify bot belongs to user
