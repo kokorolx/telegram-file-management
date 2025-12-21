@@ -424,7 +424,7 @@ export default function Home({ params: paramsPromise }) {
     try {
         let endpoint = '';
         let body = {};
-
+  
         if (type === 'file') {
             endpoint = `/api/files/${itemId}`;
             body = { folder_id: targetFolderId };
@@ -434,24 +434,27 @@ export default function Home({ params: paramsPromise }) {
         } else {
             return;
         }
-
+  
         const response = await fetch(endpoint, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
-
+  
         if (!response.ok) {
             throw new Error('Failed to move item');
         }
-
+  
         // Update local state immediately for snappy feel
         if (type === 'file') {
             setFiles(prev => prev.filter(f => f.id !== itemId));
         } else if (type === 'folder') {
             setFolders(prev => prev.filter(f => f.id !== itemId));
         }
-
+  
+        // Close any open move dialog
+        setShowMoveDialog(false);
+        
         setRefreshTrigger(prev => prev + 1);
     } catch (err) {
         console.error('Move error:', err);
