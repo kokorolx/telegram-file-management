@@ -119,7 +119,7 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
   };
 
   // Calculate ETA based on upload speed (not total time which includes encryption)
-  const calculateETA = (fileSize, progress, uploadStartTime, stage) => {
+  const calculateETA = (fileSize, progress, uploadStartTime, stage, bytesAlreadyUploaded = 0) => {
     if (!uploadStartTime) return null;
     if (progress <= 0 || progress >= 100) return null;
     
@@ -135,12 +135,14 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
       return null;
     }
     
-    const bytesUploaded = (fileSize * progress) / 100;
-    const bytesPerSecond = bytesUploaded / elapsedSeconds;
+    // Calculate bytes uploaded in current upload phase (not including already-uploaded before resume)
+    const bytesUploadedNow = (fileSize * progress) / 100 - bytesAlreadyUploaded;
+    const bytesPerSecond = bytesUploadedNow / elapsedSeconds;
     
     if (bytesPerSecond <= 0) return null;
     
-    const remainingBytes = fileSize - bytesUploaded;
+    // Remaining bytes = total size - (already uploaded + now uploaded)
+    const remainingBytes = fileSize - ((fileSize * progress) / 100);
     const estimatedSeconds = remainingBytes / bytesPerSecond;
     
     return estimatedSeconds > 0 ? estimatedSeconds : null;
@@ -219,10 +221,8 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
             password,
             (partNumber, totalParts, stage) => {
               // Calculate progress as percentage
-              // If resuming, account for already-uploaded chunks
-              const progress = isResume 
-                ? ((resumeFrom - 1 + partNumber) / totalParts) * 100
-                : (partNumber / totalParts) * 100;
+              // partNumber already includes skipped chunks from resume, so use it directly
+              const progress = (partNumber / totalParts) * 100;
               
               // Detect when uploading phase starts and set uploadStartTime locally
               const isNowUploading = stage && stage.toLowerCase().includes('uploading');
@@ -233,7 +233,9 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
               }
               
               // Calculate ETA based on upload speed
-              const eta = calculateETA(fileItem.file.size, progress, uploadStartTimeLocal, stage);
+              // For resumed uploads, calculate remaining bytes from current progress
+              const bytesAlreadyUploaded = isResume ? (fileItem.file.size * (resumeFrom - 1) / totalParts) : 0;
+              const eta = calculateETA(fileItem.file.size, progress, uploadStartTimeLocal, stage, bytesAlreadyUploaded);
               
               updateFileStatus(fileItem.id, 'uploading', progress, null, stage, eta);
               console.log(`[UPLOAD] ${fileItem.id} - ${stage} (${partNumber}/${totalParts}) | Progress: ${Math.round(progress)}% | ETA: ${eta ? formatTimeRemaining(eta) : 'calculating...'}`);
