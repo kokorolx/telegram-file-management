@@ -41,7 +41,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
       error: null,
       progressStage: '', // 'Encrypting chunk X/Y', 'Uploading chunk X/Y', etc
       startTime: null, // Track when upload starts
-      uploadStartTime: null, // Track when actual upload (not encryption) starts
       estimatedTimeRemaining: null, // ETA in seconds
     }));
 
@@ -121,7 +120,8 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
 
   // Calculate ETA based on upload speed (not total time which includes encryption)
   const calculateETA = (fileSize, progress, uploadStartTime, stage) => {
-    if (!uploadStartTime || progress <= 0 || progress >= 100) return null;
+    if (!uploadStartTime) return null;
+    if (progress <= 0 || progress >= 100) return null;
     
     // Only calculate ETA once we're in uploading phase (not encrypting)
     const isUploadingPhase = stage && stage.toLowerCase().includes('uploading');
@@ -131,7 +131,9 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
     const elapsedSeconds = elapsedMs / 1000;
     
     // Don't estimate if upload just started (less than 0.5 seconds)
-    if (elapsedSeconds < 0.5) return null;
+    if (elapsedSeconds < 0.5) {
+      return null;
+    }
     
     const bytesUploaded = (fileSize * progress) / 100;
     const bytesPerSecond = bytesUploaded / elapsedSeconds;
@@ -141,7 +143,7 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
     const remainingBytes = fileSize - bytesUploaded;
     const estimatedSeconds = remainingBytes / bytesPerSecond;
     
-    return estimatedSeconds;
+    return estimatedSeconds > 0 ? estimatedSeconds : null;
   };
 
   const uploadFile = useCallback(async (fileItem, password) => {
@@ -209,6 +211,9 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
 
       // If encrypted upload, use browser-side encryption
         try {
+          // Track upload start time locally (not in state) so we can use it immediately
+          let uploadStartTimeLocal = null;
+          
           await encryptFileChunks(
             fileItem.file,
             password,
@@ -219,21 +224,19 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
                 ? ((resumeFrom - 1 + partNumber) / totalParts) * 100
                 : (partNumber / totalParts) * 100;
               
-              // Detect when uploading phase starts and set uploadStartTime
-              const fileItem_ = queue.find(f => f.id === fileItem.id);
+              // Detect when uploading phase starts and set uploadStartTime locally
               const isNowUploading = stage && stage.toLowerCase().includes('uploading');
               
-              if (isNowUploading && !fileItem_?.uploadStartTime) {
-                setQueue(prev => prev.map(f => 
-                  f.id === fileItem.id ? { ...f, uploadStartTime: Date.now() } : f
-                ));
+              if (isNowUploading && !uploadStartTimeLocal) {
+                uploadStartTimeLocal = Date.now();
+                console.log(`[UPLOAD] ${fileItem.id} - Upload phase started, tracking speed from now`);
               }
               
               // Calculate ETA based on upload speed
-              const eta = calculateETA(fileItem.file.size, progress, fileItem_?.uploadStartTime, stage);
+              const eta = calculateETA(fileItem.file.size, progress, uploadStartTimeLocal, stage);
               
               updateFileStatus(fileItem.id, 'uploading', progress, null, stage, eta);
-              console.log(`[UPLOAD] ${fileItem.id} - ${stage} (${partNumber}/${totalParts})`);
+              console.log(`[UPLOAD] ${fileItem.id} - ${stage} (${partNumber}/${totalParts}) | Progress: ${Math.round(progress)}% | ETA: ${eta ? formatTimeRemaining(eta) : 'calculating...'}`);
             },
             currentFolderId,
             abortController.signal,
