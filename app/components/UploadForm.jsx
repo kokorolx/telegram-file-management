@@ -233,8 +233,12 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
               }
               
               // Calculate ETA based on upload speed
-              // For resumed uploads, calculate remaining bytes from current progress
-              const bytesAlreadyUploaded = isResume ? (fileItem.file.size * (resumeFrom - 1) / totalParts) : 0;
+              // For resumed uploads, use actual chunk sizes (not uniform) to calculate bytes already uploaded
+              let bytesAlreadyUploaded = 0;
+              if (isResume && chunkPlan && chunkPlan.length > 0) {
+                // Sum the sizes of chunks that were already uploaded (before resumeFrom)
+                bytesAlreadyUploaded = chunkPlan.slice(0, Math.max(0, resumeFrom - 1)).reduce((sum, size) => sum + size, 0);
+              }
               const eta = calculateETA(fileItem.file.size, progress, uploadStartTimeLocal, stage, bytesAlreadyUploaded);
               
               updateFileStatus(fileItem.id, 'uploading', progress, null, stage, eta);
