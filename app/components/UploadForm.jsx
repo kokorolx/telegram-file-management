@@ -464,9 +464,9 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
                       <span className="font-medium text-gray-700">
                         {Math.round(item.progress)}%
                       </span>
-                      {item.estimatedTimeRemaining !== null && item.status === 'uploading' && item.progress > 0 && item.progress < 100 && (
-                        <span className="font-medium text-blue-600">
-                          • ETA: {formatTimeRemaining(item.estimatedTimeRemaining)}
+                      {item.status === 'uploading' && item.progress > 0 && item.progress < 100 && (
+                        <span className={`font-medium ${item.estimatedTimeRemaining !== null ? 'text-blue-600' : 'text-amber-500'}`}>
+                          • ETA: {item.estimatedTimeRemaining !== null ? formatTimeRemaining(item.estimatedTimeRemaining) : 'calculating...'}
                         </span>
                       )}
                     </div>
