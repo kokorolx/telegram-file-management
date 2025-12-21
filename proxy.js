@@ -9,6 +9,7 @@ const PUBLIC_PATHS = [
   '/api/settings', // GET /api/settings is used to check setup status
   '/api/share',
   '/api/chunk',
+  '/api/changelog',
 ];
 
 export async function proxy(request) {
