@@ -40,6 +40,8 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
       progress: 0,
       error: null,
       progressStage: '', // 'Encrypting chunk X/Y', 'Uploading chunk X/Y', etc
+      startTime: null, // Track when upload starts
+      estimatedTimeRemaining: null, // ETA in seconds
     }));
 
     newFiles.forEach(f => {
@@ -99,14 +101,39 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
   };
 
 
-  const updateFileStatus = useCallback((id, status, progress, error = null, stage = '') => {
+  const updateFileStatus = useCallback((id, status, progress, error = null, stage = '', estimatedTimeRemaining = null) => {
     setQueue(prev => prev.map(f => {
       if (f.id === id) {
-        return { ...f, status, progress, error, progressStage: stage };
+        return { ...f, status, progress, error, progressStage: stage, estimatedTimeRemaining };
       }
       return f;
     }));
   }, []);
+
+  // Helper to format seconds to human-readable time
+  const formatTimeRemaining = (seconds) => {
+    if (!seconds || seconds < 0) return '';
+    if (seconds < 60) return `${Math.ceil(seconds)}s`;
+    if (seconds < 3600) return `${Math.ceil(seconds / 60)}m`;
+    return `${Math.ceil(seconds / 3600)}h`;
+  };
+
+  // Calculate ETA based on progress
+  const calculateETA = (fileSize, progress, startTime) => {
+    if (!startTime || progress <= 0 || progress >= 100) return null;
+    
+    const elapsedMs = Date.now() - startTime;
+    const elapsedSeconds = elapsedMs / 1000;
+    const bytesUploaded = (fileSize * progress) / 100;
+    const bytesPerSecond = bytesUploaded / elapsedSeconds;
+    
+    if (bytesPerSecond <= 0) return null;
+    
+    const remainingBytes = fileSize - bytesUploaded;
+    const estimatedSeconds = remainingBytes / bytesPerSecond;
+    
+    return estimatedSeconds;
+  };
 
   const uploadFile = useCallback(async (fileItem, password) => {
      // const startTime = Date.now();
@@ -118,7 +145,11 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
      const abortController = new AbortController();
      abortControllersRef.current.set(fileItem.id, abortController);
 
-     // Update status to uploading
+     // Update status to uploading and record start time
+     const uploadStartTime = Date.now();
+     setQueue(prev => prev.map(f => 
+       f.id === fileItem.id ? { ...f, startTime: uploadStartTime } : f
+     ));
      updateFileStatus(fileItem.id, 'uploading', 0);
 
     try {
@@ -178,7 +209,12 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
               const progress = isResume 
                 ? ((resumeFrom - 1 + partNumber) / totalParts) * 100
                 : (partNumber / totalParts) * 100;
-              updateFileStatus(fileItem.id, 'uploading', progress, null, stage);
+              
+              // Calculate ETA
+              const fileItem_ = queue.find(f => f.id === fileItem.id);
+              const eta = calculateETA(fileItem.file.size, progress, fileItem_?.startTime);
+              
+              updateFileStatus(fileItem.id, 'uploading', progress, null, stage, eta);
               console.log(`[UPLOAD] ${fileItem.id} - ${stage} (${partNumber}/${totalParts})`);
             },
             currentFolderId,
@@ -388,14 +424,22 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
                     />
                   </div>
 
-                  {/* Progress Stage */}
-                  {item.progressStage && (
-                    <p className="text-xs text-gray-500 mt-1">{item.progressStage}</p>
-                  )}
-
-                  {item.error && (
-                    <p className="text-xs text-red-500 mt-1">{item.error}</p>
-                  )}
+                  {/* Progress Stage and ETA */}
+                  <div className="flex items-center justify-between mt-1">
+                    <div>
+                      {item.progressStage && (
+                        <p className="text-xs text-gray-500">{item.progressStage}</p>
+                      )}
+                      {item.error && (
+                        <p className="text-xs text-red-500">{item.error}</p>
+                      )}
+                    </div>
+                    {item.estimatedTimeRemaining !== null && item.status === 'uploading' && item.progress > 0 && item.progress < 100 && (
+                      <p className="text-xs font-medium text-blue-600 whitespace-nowrap ml-2">
+                        ETA: {formatTimeRemaining(item.estimatedTimeRemaining)}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
