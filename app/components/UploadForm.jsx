@@ -122,6 +122,51 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
      updateFileStatus(fileItem.id, 'uploading', 0);
 
     try {
+      // NEW: Check for resumable upload
+      console.log(`[UPLOAD] ${fileItem.id} - Checking for existing upload...`);
+      const checkRes = await fetch(
+        `/api/upload/check?filename=${encodeURIComponent(fileItem.file.name)}&size=${fileItem.file.size}`,
+        { signal: abortController.signal }
+      );
+      const checkData = await checkRes.json();
+
+      let fileId = null;
+      let resumeFrom = 1;
+      let isResume = false;
+
+      let chunkPlan = null;
+      
+      if (checkData.exists && checkData.can_resume) {
+        fileId = checkData.file_id;
+        resumeFrom = Math.min(...checkData.missing_chunks);
+        isResume = true;
+        console.log(`[UPLOAD] ${fileItem.id} - ✓ Resume available: chunks ${resumeFrom}-${checkData.total_chunks}`);
+        
+        // Retrieve the saved chunk plan from server
+        console.log(`[UPLOAD] ${fileItem.id} - Retrieving chunk plan...`);
+        const chunkPlanRes = await fetch(
+          `/api/upload/chunk-plan?file_id=${fileId}`,
+          { signal: abortController.signal }
+        );
+        if (chunkPlanRes.ok) {
+          const chunkPlanData = await chunkPlanRes.json();
+          chunkPlan = chunkPlanData.chunk_sizes;
+          console.log(`[UPLOAD] ${fileItem.id} - ✓ Retrieved chunk plan: ${chunkPlan.length} chunks`);
+        }
+        
+        updateFileStatus(
+          fileItem.id,
+          'uploading',
+          (resumeFrom / checkData.total_chunks) * 100,
+          null,
+          `Resuming from chunk ${resumeFrom}/${checkData.total_chunks}`
+        );
+      } else if (checkData.exists) {
+        console.log(`[UPLOAD] ${fileItem.id} - Upload exists but already complete`);
+        updateFileStatus(fileItem.id, 'error', 0, 'File already uploaded');
+        return;
+      }
+
       // If encrypted upload, use browser-side encryption
         try {
           await encryptFileChunks(
@@ -129,15 +174,21 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
             password,
             (partNumber, totalParts, stage) => {
               // Calculate progress as percentage
-              const progress = (partNumber / totalParts) * 100;
+              // If resuming, account for already-uploaded chunks
+              const progress = isResume 
+                ? ((resumeFrom - 1 + partNumber) / totalParts) * 100
+                : (partNumber / totalParts) * 100;
               updateFileStatus(fileItem.id, 'uploading', progress, null, stage);
               console.log(`[UPLOAD] ${fileItem.id} - ${stage} (${partNumber}/${totalParts})`);
             },
             currentFolderId,
-            abortController.signal
+            abortController.signal,
+            fileId,        // Pass file_id for resume
+            resumeFrom,    // Pass resume starting point
+            chunkPlan      // Pass saved chunk sizes for resume
           );
 
-          console.log(`[UPLOAD] ${fileItem.id} - ✓ Encrypted upload successful`);
+          console.log(`[UPLOAD] ${fileItem.id} - ✓ Encrypted upload successful${isResume ? ' (resumed)' : ''}`);
           updateFileStatus(fileItem.id, 'success', 100);
         } catch (encErr) {
           console.error(`[UPLOAD] ${fileItem.id} - Encryption failed:`, encErr);

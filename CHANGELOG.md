@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2025-12-21] - Resumable Upload Support
+
+### Added
+- **Resumable Upload System** - Upload interruptions can now be resumed from where they left off without re-uploading completed chunks.
+- **Deterministic Chunk Planning** - Browser generates random chunk sizes once and saves the plan to database; resume uses exact same sizes (no variance).
+- **Upload Resume Detection** - `/api/upload/check` endpoint checks for incomplete uploads and identifies missing chunks.
+- **Chunk Plan Retrieval** - `/api/upload/chunk-plan` endpoint provides saved chunk sizes for resuming uploads.
+- **Resume Test Suite** - `test-resume.js` validates chunk plan generation, resume detection, partial uploads, and multiple resume cycles (6/6 tests passing).
+
+### Technical Details
+- Chunk plan stored as JSONB array in database: `[2.5MB, 2.7MB, 2.3MB, ..., 1.1MB]`
+- Browser-side: generates plan once on new upload, retrieves and reuses on resume
+- Server-side: saves plan on first chunk, prevents duplicate chunk processing via idempotency
+- Resume detection based on filename + file size matching + incomplete upload status
+
+---
+
 ## [2025-12-19] - Secure Sharing & Envelope Encryption
 
 ### Added
