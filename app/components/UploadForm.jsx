@@ -425,21 +425,25 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
                   </div>
 
                   {/* Progress Stage and ETA */}
-                  <div className="flex items-center justify-between mt-1">
-                    <div>
+                  {item.error ? (
+                    <p className="text-xs text-red-500 mt-1">{item.error}</p>
+                  ) : (
+                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-600">
                       {item.progressStage && (
-                        <p className="text-xs text-gray-500">{item.progressStage}</p>
+                        <span>
+                          {item.progressStage.replace(/chunk \d+\/\d+/i, '').trim()}
+                        </span>
                       )}
-                      {item.error && (
-                        <p className="text-xs text-red-500">{item.error}</p>
+                      <span className="font-medium text-gray-700">
+                        {Math.round(item.progress)}%
+                      </span>
+                      {item.estimatedTimeRemaining !== null && item.status === 'uploading' && item.progress > 0 && item.progress < 100 && (
+                        <span className="font-medium text-blue-600">
+                          • ETA: {formatTimeRemaining(item.estimatedTimeRemaining)}
+                        </span>
                       )}
                     </div>
-                    {item.estimatedTimeRemaining !== null && item.status === 'uploading' && item.progress > 0 && item.progress < 100 && (
-                      <p className="text-xs font-medium text-blue-600 whitespace-nowrap ml-2">
-                        ETA: {formatTimeRemaining(item.estimatedTimeRemaining)}
-                      </p>
-                    )}
-                  </div>
+                  )}
                 </div>
               </div>
             ))}
