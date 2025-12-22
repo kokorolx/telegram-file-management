@@ -9,9 +9,12 @@
     "start": "next start",
     "lint": "eslint .",
     "setup-db": "node scripts/init-db.js",
-    "migrate": "node scripts/migrate-user-id.js"
+    "migrate": "node scripts/migrate-user-id.js",
+    "migration:run": "node scripts/run-migrations.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.956.0",
+    "@aws-sdk/s3-request-presigner": "^3.956.0",
     "@emailjs/browser": "^4.4.1",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.41.6",

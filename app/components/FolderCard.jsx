@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-export default function FolderCard({ folder, onDoubleClick, onCreated, onDeleted, onContextMenu, onMove }) {
+export default function FolderCard({ folder, onDoubleClick, onCreated, onDeleted, onContextMenu, onMove, onFilesDropped }) {
   const [deleting, setDeleting] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState(folder.name);
@@ -48,8 +48,20 @@ export default function FolderCard({ folder, onDoubleClick, onCreated, onDeleted
     e.stopPropagation();
     setIsDragOver(false);
 
+    // 1. Handle external file drops (uploading to this folder)
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        if (typeof onFilesDropped === 'function') {
+            onFilesDropped(e.dataTransfer.files, folder.id);
+            return;
+        }
+    }
+
+    // 2. Handle internal moves (dragging items within the UI)
+    const jsonData = e.dataTransfer.getData('application/json');
+    if (!jsonData) return;
+
     try {
-        const data = JSON.parse(e.dataTransfer.getData('application/json'));
+        const data = JSON.parse(jsonData);
         // Prevent dropping folder into itself
         if (data.type === 'folder' && data.id === folder.id) return;
 

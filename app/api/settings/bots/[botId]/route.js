@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import { userBotRepository } from '@/lib/repositories/UserBotRepository';
 import { filePartRepository } from '@/lib/repositories/FilePartRepository';
 import { requireAuth } from '@/lib/apiAuth';
+import { authService } from '@/lib/authService';
 
 /**
  * PATCH /api/settings/bots/[botId]
- * Update bot name or default status.
+ * Update bot name, token, tgUserId, or default status.
  */
 export async function PATCH(request, { params }) {
   const { botId } = await params;
@@ -13,7 +14,7 @@ export async function PATCH(request, { params }) {
     const auth = await requireAuth(request);
     if (!auth.authenticated) return NextResponse.json({ error: auth.error }, { status: 401 });
 
-    const { name, is_default } = await request.json();
+    const { name, is_default, botToken, tgUserId } = await request.json();
 
     // Verify bot belongs to user
     const bot = await userBotRepository.findByIdAndUser(botId, auth.user.id);
@@ -22,8 +23,22 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Bot not found' }, { status: 404 });
     }
 
+    const updateData = { updated_at: new Date() };
+
     if (name !== undefined) {
-       await userBotRepository.update(botId, { name, updated_at: new Date() });
+      updateData.name = name;
+    }
+
+    if (botToken !== undefined) {
+      updateData.bot_token = authService.encryptSystemData(botToken);
+    }
+
+    if (tgUserId !== undefined) {
+      updateData.tg_user_id = authService.encryptSystemData(tgUserId);
+    }
+
+    if (Object.keys(updateData).length > 1) {
+      await userBotRepository.update(botId, updateData);
     }
 
     if (is_default !== undefined) {

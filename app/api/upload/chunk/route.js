@@ -2,16 +2,34 @@ import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { fileService } from '@/lib/fileService';
 import { storageProvider } from '@/lib/storage';
+import { S3StorageProvider } from '@/lib/storage/S3StorageProvider';
+import { rsaKeyManager } from '@/lib/encryption/rsaKeyManager';
+import { config } from '@/lib/config';
 
 export const dynamic = 'force-dynamic';
+
+// In-memory cache for S3 configs per upload session
+// Key: `${userId}:${fileId}`, Value: { s3Config, expiresAt }
+const s3ConfigCache = new Map();
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 /**
  * POST /api/upload/chunk
  *
  * Receive encrypted file chunk from browser and persist via storage abstraction.
+ * Supports dual-upload: Telegram (primary) + S3/R2 (backup).
+ * 
+ * IMPORTANT: Files are already encrypted by the browser. The server NEVER decrypts.
+ * The server just stores the encrypted bytes in both Telegram and S3.
+ * Only the browser (with master password) can decrypt the files.
  */
 export async function POST(request) {
   try {
+    // Ensure RSA keys are initialized
+    if (!rsaKeyManager.publicKey) {
+      await rsaKeyManager.init();
+    }
+
     // Authenticate
     const auth = await requireAuth(request);
     if (!auth.authenticated) {
@@ -39,21 +57,96 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Step 1: Upload encrypted chunk to selected storage provider
+    const encryptedBuffer = Buffer.from(encrypted_data, 'base64');
+    const chunkFilename = `${original_filename}_part_${part_number}`;
+
+    // Step 1: Upload encrypted chunk to Telegram (primary storage)
     let storageId;
     try {
-      const encryptedBuffer = Buffer.from(encrypted_data, 'base64');
-      storageId = await storageProvider.uploadChunk(userId, encryptedBuffer, `${original_filename}_part_${part_number}`);
+      storageId = await storageProvider.uploadChunk(userId, encryptedBuffer, chunkFilename);
     } catch (err) {
-      console.error(`Failed to upload chunk ${part_number} to storage:`, err);
+      console.error(`Failed to upload chunk ${part_number} to Telegram:`, err);
       return NextResponse.json({ error: `Storage upload failed: ${err.message}` }, { status: 500 });
     }
 
-    // Step 2: Persist metadata and handle stats via FileService
-    // Note: We still use 'telegram_file_id' in the payload for database compatibility
+    // Step 2: Attempt S3 backup upload (non-blocking)
+    let backupStorageId = null;
+    let backupBackend = null;
+    const cacheKey = `${userId}:${file_id}`;
+    try {
+      const s3Provider = new S3StorageProvider();
+      let s3Config = null;
+      let configSource = null;
+
+      // Check cache first (for chunks 2+)
+      const cached = s3ConfigCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        s3Config = cached.s3Config;
+        configSource = cached.configSource;
+        console.log(`[BACKUP] Using cached S3 config for chunk ${part_number} (${configSource})`);
+      } else {
+        // Priority 1: Personal S3 config (re-encrypted by browser with server's public key)
+        const { s3_config_reencrypted } = body;
+        if (s3_config_reencrypted) {
+          try {
+            // Decrypt with server's private key
+            const decrypted = rsaKeyManager.decryptWithPrivate(s3_config_reencrypted.encrypted_data);
+            s3Config = JSON.parse(decrypted);
+            configSource = 'Personal';
+            console.log(`[BACKUP] Using personal S3 config (bucket: ${s3Config.bucket})`);
+          } catch (decryptErr) {
+            console.warn(`[BACKUP] Failed to decrypt personal S3 config: ${decryptErr.message}`);
+            s3Config = null;
+          }
+        }
+
+        // Priority 2: Global S3 config (from environment variables)
+        if (!s3Config && config.s3Bucket && config.s3AccessKeyId && config.s3SecretAccessKey) {
+          s3Config = {
+            bucket: config.s3Bucket,
+            accessKeyId: config.s3AccessKeyId,
+            secretAccessKey: config.s3SecretAccessKey,
+            region: config.s3Region || 'us-east-1',
+            endpoint: config.s3Endpoint || null,
+            storageClass: config.s3StorageClass || 'STANDARD'
+          };
+          configSource = 'Global';
+          console.log(`[BACKUP] Using global S3 config (bucket: ${s3Config.bucket})`);
+        }
+
+        // Cache the config for remaining chunks
+        if (s3Config) {
+          s3ConfigCache.set(cacheKey, {
+            s3Config,
+            configSource,
+            expiresAt: Date.now() + CACHE_TTL
+          });
+        }
+      }
+
+      if (s3Config) {
+        backupStorageId = await s3Provider.uploadChunk(userId, encryptedBuffer, chunkFilename, s3Config, file_id);
+        backupBackend = s3Config.endpoint?.includes('r2.cloudflarestorage.com') ? 'R2' : 'S3';
+        console.log(`[BACKUP] Chunk ${part_number} uploaded to ${backupBackend} (${configSource})`);
+      } else {
+        console.log(`[BACKUP] No S3 config available`);
+      }
+    } catch (backupErr) {
+      // Non-blocking: Log warning but don't fail the upload
+      console.warn(`[BACKUP] Failed to upload chunk ${part_number} to S3 backup:`, backupErr.message);
+    }
+
+    // Clean up cache after last chunk
+    if (part_number === total_parts) {
+      s3ConfigCache.delete(cacheKey);
+    }
+
+    // Step 3: Persist metadata and handle stats via FileService
     const { fileRecord, isLastChunk } = await fileService.handleUploadChunk(userId, {
       ...body,
-      telegram_file_id: storageId
+      telegram_file_id: storageId,
+      backup_storage_id: backupStorageId,
+      backup_backend: backupBackend,
     });
 
     if (isLastChunk) {
@@ -77,7 +170,8 @@ export async function POST(request) {
       file_id,
       part_number,
       total_parts,
-      status: 'uploading'
+      status: 'uploading',
+      backup: backupStorageId ? true : false,
     });
 
   } catch (err) {

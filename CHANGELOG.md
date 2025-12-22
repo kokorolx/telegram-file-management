@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2025-12-22] - Two-Layer Encryption for Personal S3 Credentials
+
+### Added
+- **Secure Personal S3 Configuration** - Users can now securely store personal S3/R2 credentials in the database, encrypted with their Master Password.
+- **Two-Layer Encryption Flow** - Browser decrypts S3 config with Master Password, re-encrypts with server's RSA-4096 public key, server decrypts with private key (ephemeral, never persisted).
+- **Server RSA Key Pair** - Automatic generation and secure storage of 4096-bit RSA key pair for S3 credential encryption in transit.
+- **Per-User S3 Configuration Priority** - Upload/download logic respects priority: Personal S3 (user-configured) > Global S3 (env vars).
+- **Encrypted S3 Config Endpoint** - `/api/encryption/public-key` returns server's RSA public key for browser to re-encrypt credentials.
+- **Upload S3 Config Endpoint** - `/api/upload/s3-config` returns user's encrypted S3 config (encrypted with Master Password) for browser decryption.
+- **Browser S3 Config Encryption** - `browserS3ConfigEncryption.js` provides `encryptS3ConfigWithServerKey()` and `decryptS3ConfigWithMasterPassword()` utilities.
+- **Server-Side S3 Config Caching** - Per-upload cache (TTL: 30 min) prevents credential decryption for every chunk, improving performance.
+- **Download S3 Fallback with Personal Config** - Browser can send re-encrypted personal S3 config via `X-S3-Config` header for S3 fallback during downloads.
+- **Browser-Side S3 Config Caching** - Download operations cache re-encrypted S3 config (TTL: 5 min) to avoid duplicate API calls and re-encryption.
+- **Security Properties** - Master password never sent to server; S3 credentials only exist in server memory during active use; two-layer encryption protects credentials in transit.
+
+### Technical Details
+- New module: `lib/encryption/rsaKeyManager.js` - manages server's RSA key pair (generation, loading, encryption/decryption).
+- New module: `lib/browserS3ConfigEncryption.js` - browser-side S3 config encryption utilities using Web Crypto API.
+- New API: `/api/encryption/public-key` (GET) - returns RSA public key (no auth required).
+- New API: `/api/upload/s3-config` (GET) - returns user's encrypted S3 config (auth required).
+- Updated API: `/api/upload/chunk` (POST) - accepts `s3_config_reencrypted` on first chunk, caches decrypted config per fileId.
+- Updated API: `/api/chunk/[fileId]/[partNumber]` (GET) - accepts `X-S3-Config` header for S3 fallback during download.
+- Updated module: `lib/browserUploadEncryption.js` - fetches encryption salt, decrypts S3 config with Master Password, re-encrypts with server key.
+- Updated module: `lib/clientDecryption.js` - prepares S3 config once per download operation with browser-level caching.
+- Updated components: FileCard, FileRow, Lightbox, SecureImage, ShareModal - pass `masterPassword` to decryption functions.
+- Environment variables: `KEY_STORAGE_PATH` (default: `./.keys`) for RSA key storage.
+
+### Bug Fixes
+- Fixed S3 config encryption salt not being passed during browser decryption (now fetches from `/api/settings`).
+- Fixed only first chunk uploading to personal S3 (implemented per-fileId server-side cache).
+- Fixed multiple chunks overwriting same S3 object (now uses `userId/fileId/filename` as object key).
+- Fixed RSA key manager not initialized during download (added init check at start of chunk download handler).
+- Fixed duplicate API calls to `/api/settings` and `/api/upload/s3-config` (implemented 5-min browser-level cache).
+
+### Blob Cache Improvements
+- Added `getCachedOrDecrypt()` function in `lib/secureImageCache.js` to deduplicate concurrent decryption requests for the same file.
+- Prevents multiple components from simultaneously fetching/decrypting the same file, reducing memory usage and API calls.
+- Components wait for a single promise instead of creating multiple concurrent requests.
+
+---
+
+## [2025-12-21] - S3/R2 Backup Storage Support
+
+### Added
+- **S3/R2 Backup Storage** - Files are now optionally mirrored to S3-compatible storage (AWS S3, Cloudflare R2) for high availability.
+- **Dual-Upload Engine** - Chunks uploaded to Telegram (primary) are automatically mirrored to S3 backup (non-blocking).
+- **Fallback Download Logic** - Downloads retry Telegram 3x with exponential backoff before falling back to S3 backup.
+- **Hierarchical Configuration** - S3 backups support Global (env), Organization, and Personal (encrypted) configuration levels.
+- **Encrypted Credentials** - Personal S3 configs are encrypted using the user's Master Password (unrecoverable if lost).
+- **Storage Class Support** - Choose from AWS S3 classes (Standard, IA, Intelligent-Tiering, Glacier) or R2 classes (Standard, IA).
+- **Private by Default** - All S3 uploads explicitly use `ACL: 'private'` and downloads use 1-hour presigned URLs.
+
+### Technical Details
+- New entities: `Organization` for group-level S3 configs.
+- Updated entities: `FilePart` (backup_storage_id, backup_backend), `User` (organization_id, encrypted_s3_config).
+- New service: `S3ConfigService` for master-password encryption/decryption.
+- New provider: Real `S3StorageProvider` with hierarchical credential selection.
+- New API: `/api/settings/backup` (GET/POST/DELETE) for user backup config management.
+- New UI: `S3BackupModal.jsx` for configuring backup storage (provider, bucket, credentials, storage class).
+- Environment variables: `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_STORAGE_CLASS`, `ALLOW_PERSONAL_S3`.
+
+---
+
 ## [2025-12-21] - Resumable Upload Support
 
 ### Added

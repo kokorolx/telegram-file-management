@@ -20,7 +20,8 @@ export default function FileList({
   selectedItems,
   selectedFolders,
   onFileSelect,
-  onFolderSelect
+  onFolderSelect,
+  onFilesDropped
 }) {
   const [sortBy, setSortBy] = useState('date-desc');
   const [viewMode, setViewMode] = useState('grid');
@@ -96,6 +97,7 @@ export default function FileList({
               onDeleted={onFolderDeleted}
               onContextMenu={(e) => onItemContextMenu && onItemContextMenu(e, folder, 'folder')}
               onMove={onItemMove}
+              onFilesDropped={onFilesDropped}
             />
           ))}
 
@@ -132,6 +134,7 @@ export default function FileList({
                  onMove={onItemMove}
                  isSelected={selectedFolders?.has(folder.id)}
                  onSelectionChange={onFolderSelect}
+                 onFilesDropped={onFilesDropped}
                />
              ))}
 

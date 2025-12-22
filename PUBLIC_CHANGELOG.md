@@ -2,6 +2,42 @@
 
 All user-facing updates and improvements to Telegram Vault.
 
+## [December 22, 2025] - Personal S3 Backup Configuration
+
+### ✨ New Features
+- **Your Own S3 Bucket** - Store backups in your personal AWS S3 or Cloudflare R2 account for complete control
+- **Secure Credential Storage** - Your S3 access keys are encrypted with your Master Password and never stored in plain text
+- **Automatic Priority** - Personal S3 backup takes priority over global backup; falls back gracefully if unavailable
+- **Zero Trust Encryption** - Credentials are re-encrypted by the browser before sending to server, and only decrypted in server memory during active use
+
+### 🔒 Security Highlights
+- **Never Shared with Server** - Your Master Password is never sent to the server; credential encryption/decryption happens entirely in your browser
+- **Ephemeral Decryption** - S3 credentials are decrypted by the server only when needed and immediately discarded after use
+- **Military-Grade Encryption** - Credentials use RSA-4096 encryption in transit + Master Password encryption at rest
+- **Your Cloud, Your Control** - Backups go directly to your personal cloud account; we never see your credentials
+
+### 🎯 What This Means
+You now have complete control over where your backups are stored. Your S3 credentials stay encrypted and private at all times, with zero trust in the server.
+
+---
+
+## [December 21, 2025] - Cloud Backup Storage
+
+### ✨ New Features
+- **S3/R2 Backup** - Your files can now be mirrored to S3-compatible storage (AWS S3, Cloudflare R2) for extra reliability
+- **Backup Settings Modal** - Configure your own backup storage directly from the app with provider selection and storage class options
+- **Automatic Fallback** - If Telegram is slow or unavailable, files are automatically served from your backup storage
+- **Storage Classes** - Choose between Standard, Infrequent Access, or other tiers to optimize costs
+
+### 🔒 Security Highlights
+- **Private by Default** - All backup files are stored privately with secure, time-limited access links
+- **Encrypted Configuration** - Your backup credentials are encrypted with your Master Password
+
+### 🎯 What This Means
+Your files are now more resilient than ever. Even if Telegram has issues, your data remains accessible from your personal cloud backup.
+
+---
+
 ## [December 21, 2025] - Resume Interrupted Uploads
 
 ### ✨ New Features

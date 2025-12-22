@@ -39,7 +39,7 @@ export default function Modal({
 
       {/* Modal Content */}
       <div
-        className={`relative bg-white rounded-2xl shadow-2xl w-full max-w-md animate-scale-in border border-gray-100 z-10 ${className}`}
+        className={`relative bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md animate-scale-in border border-slate-700 z-10 ${className}`}
         onClick={e => e.stopPropagation()}
       >
         {showCloseButton && (

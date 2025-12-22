@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useEncryption } from '../contexts/EncryptionContext';
-import { blobCache } from '@/lib/secureImageCache';
+import { blobCache, getCachedOrDecrypt } from '@/lib/secureImageCache';
 
 export default function SecureImage({ file, className, alt, ...props }) {
   const { masterPassword, encryptionKey, isUnlocked } = useEncryption();
@@ -62,34 +62,26 @@ export default function SecureImage({ file, className, alt, ...props }) {
       return;
     }
 
-    // 3. Check Cache
-    if (blobCache.has(file.id)) {
-      setSrc(blobCache.get(file.id).url);
-      return;
-    }
-
-    // 4. Fetch and Create Blob
+    // 3. Use getCachedOrDecrypt to prevent concurrent fetches
     async function fetchImage() {
       if (loading) return;
       try {
         setLoading(true);
         setError(null);
 
-        const { fetchFilePartMetadata, fetchAndDecryptFullFile } = await import('@/lib/clientDecryption');
+        const entry = await getCachedOrDecrypt(file.id, async () => {
+          const { fetchFilePartMetadata, fetchAndDecryptFullFile } = await import('@/lib/clientDecryption');
 
-        // 1. Fetch parts metadata (IVs, AuthTags)
-        const parts = await fetchFilePartMetadata(file.id);
+          // 1. Fetch parts metadata (IVs, AuthTags)
+          const parts = await fetchFilePartMetadata(file.id);
 
-        // 2. Fetch and decrypt all chunks in parallel (with concurrency limit in utility)
-        const blob = await fetchAndDecryptFullFile(file, encryptionKey, parts);
-
-        const url = URL.createObjectURL(blob);
-
-        // Update global cache immediately, regardless of mount state
-        blobCache.set(file.id, { url, timestamp: Date.now() });
+          // 2. Fetch and decrypt all chunks in parallel (with concurrency limit in utility)
+          const blob = await fetchAndDecryptFullFile(file, encryptionKey, parts, null, false, masterPassword);
+          return URL.createObjectURL(blob);
+        });
 
         if (mountedRef.current) {
-          setSrc(url);
+          setSrc(entry.url);
         }
       } catch (err) {
         console.error('SecureImage error:', err);

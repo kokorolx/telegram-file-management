@@ -57,10 +57,10 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="space-y-6 p-6">
-        <div className="h-32 bg-gray-200 rounded-lg animate-pulse" />
+        <div className="h-32 bg-slate-700/50 rounded-xl animate-pulse" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[1, 2, 3].map(i => (
-            <div key={i} className="h-24 bg-gray-200 rounded-lg animate-pulse" />
+            <div key={i} className="h-24 bg-slate-700/50 rounded-xl animate-pulse" />
           ))}
         </div>
       </div>
@@ -83,62 +83,62 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Storage Overview */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold mb-4">Storage Overview</h2>
+      <div className="bg-slate-700/50 rounded-xl border border-slate-600 p-6">
+        <h2 className="text-lg font-bold text-white mb-4">📊 Storage Overview</h2>
         <div className="flex items-end gap-4">
           <div>
-            <p className="text-sm text-gray-600">Total Used</p>
-            <p className="text-2xl font-bold text-blue-600">{formatFileSize(totalSize)}</p>
+            <p className="text-sm text-slate-400">Total Used</p>
+            <p className="text-2xl font-bold text-blue-400">{formatFileSize(totalSize)}</p>
           </div>
         </div>
-        <div className="mt-4 w-full bg-gray-200 rounded-full h-3">
-          <div className="bg-blue-600 h-3 rounded-full" style={{ width: '100%' }} />
+        <div className="mt-4 w-full bg-slate-800 rounded-full h-3">
+          <div className="bg-blue-500 h-3 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]" style={{ width: '100%' }} />
         </div>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-sm text-gray-600">Total Files</p>
-          <p className="text-3xl font-bold text-gray-900">{totalFiles}</p>
+        <div className="bg-slate-700/50 rounded-xl border border-slate-600 p-6">
+          <p className="text-sm text-slate-400">Total Files</p>
+          <p className="text-3xl font-bold text-white">{totalFiles}</p>
         </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-sm text-gray-600">Total Uploads</p>
-          <p className="text-3xl font-bold text-green-600">{totalUploads}</p>
+        <div className="bg-slate-700/50 rounded-xl border border-slate-600 p-6">
+          <p className="text-sm text-slate-400">Total Uploads</p>
+          <p className="text-3xl font-bold text-emerald-400">{totalUploads}</p>
         </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-sm text-gray-600">Total Downloads</p>
-          <p className="text-3xl font-bold text-purple-600">{totalDownloads}</p>
+        <div className="bg-slate-700/50 rounded-xl border border-slate-600 p-6">
+          <p className="text-sm text-slate-400">Total Downloads</p>
+          <p className="text-3xl font-bold text-purple-400">{totalDownloads}</p>
         </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-sm text-gray-600">Active Bots</p>
-          <p className="text-3xl font-bold text-orange-600">{bots.length}</p>
+        <div className="bg-slate-700/50 rounded-xl border border-slate-600 p-6">
+          <p className="text-sm text-slate-400">Active Bots</p>
+          <p className="text-3xl font-bold text-orange-400">{bots.length}</p>
         </div>
       </div>
 
       {/* Bot Usage Stats */}
       {bots.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-4">Bot Usage</h2>
+        <div className="bg-slate-700/50 rounded-xl border border-slate-600 p-6">
+          <h2 className="text-lg font-bold text-white mb-4">🤖 Bot Usage</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-2 px-4 font-medium text-gray-700">Bot Name</th>
-                  <th className="text-right py-2 px-4 font-medium text-gray-700">Files</th>
-                  <th className="text-right py-2 px-4 font-medium text-gray-700">Size</th>
-                  <th className="text-right py-2 px-4 font-medium text-gray-700">Uploads</th>
+                <tr className="border-b border-slate-600">
+                  <th className="text-left py-2 px-4 font-medium text-slate-400">Bot Name</th>
+                  <th className="text-right py-2 px-4 font-medium text-slate-400">Files</th>
+                  <th className="text-right py-2 px-4 font-medium text-slate-400">Size</th>
+                  <th className="text-right py-2 px-4 font-medium text-slate-400">Uploads</th>
                 </tr>
               </thead>
               <tbody>
                 {bots.map(bot => {
                   const botData = botStats[bot.id] || { files_count: 0, total_size: 0, uploads_count: 0 };
                   return (
-                    <tr key={bot.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-2 px-4 text-gray-900">{bot.name}</td>
-                      <td className="py-2 px-4 text-right text-gray-600">{botData.files_count || 0}</td>
-                      <td className="py-2 px-4 text-right text-gray-600">{formatFileSize(botData.total_size || 0)}</td>
-                      <td className="py-2 px-4 text-right text-gray-600">{botData.uploads_count || 0}</td>
+                    <tr key={bot.id} className="border-b border-slate-700/50 hover:bg-slate-600/30 transition-colors">
+                      <td className="py-2 px-4 text-slate-200">{bot.name}</td>
+                      <td className="py-2 px-4 text-right text-slate-300">{botData.files_count || 0}</td>
+                      <td className="py-2 px-4 text-right text-slate-300">{formatFileSize(botData.total_size || 0)}</td>
+                      <td className="py-2 px-4 text-right text-slate-300">{botData.uploads_count || 0}</td>
                     </tr>
                   );
                 })}

@@ -9,7 +9,7 @@ import FolderNav from '../components/FolderNav';
 import Breadcrumb from '../components/Breadcrumb';
 import CreateFolderDialog from '../components/CreateFolderDialog';
 import DropZone from '../components/DropZone';
-import SettingsPanel from '../components/SettingsPanel';
+
 import LoginDialog from '../components/LoginDialog';
 import EnhancedContextMenu from '../components/EnhancedContextMenu';
 import { FileListSkeletonGrid, FileListSkeletonRow } from '../components/SkeletonLoader';
@@ -53,8 +53,8 @@ export default function Home({ params: paramsPromise }) {
 
   // UI State
   const [showCreateFolder, setShowCreateFolder] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState([]);
+
   const [contextMenu, setContextMenu] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
   const [viewMode, setViewMode] = useState('grid');
@@ -424,7 +424,7 @@ export default function Home({ params: paramsPromise }) {
     try {
         let endpoint = '';
         let body = {};
-  
+
         if (type === 'file') {
             endpoint = `/api/files/${itemId}`;
             body = { folder_id: targetFolderId };
@@ -434,27 +434,27 @@ export default function Home({ params: paramsPromise }) {
         } else {
             return;
         }
-  
+
         const response = await fetch(endpoint, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
-  
+
         if (!response.ok) {
             throw new Error('Failed to move item');
         }
-  
+
         // Update local state immediately for snappy feel
         if (type === 'file') {
             setFiles(prev => prev.filter(f => f.id !== itemId));
         } else if (type === 'folder') {
             setFolders(prev => prev.filter(f => f.id !== itemId));
         }
-  
+
         // Close any open move dialog
         setShowMoveDialog(false);
-        
+
         setRefreshTrigger(prev => prev + 1);
     } catch (err) {
         console.error('Move error:', err);
@@ -471,10 +471,6 @@ export default function Home({ params: paramsPromise }) {
       <SetupModal
         onSetupComplete={handleSetupComplete}
         refreshTrigger={refreshTrigger}
-      />
-      <SettingsPanel
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
       />
       <CreateFolderDialog
         isOpen={showCreateFolder}
@@ -571,13 +567,13 @@ export default function Home({ params: paramsPromise }) {
 
                   <div className="w-[1px] h-6 bg-slate-200 mx-1"></div>
 
-                  <button
-                      onClick={() => setShowSettings(true)}
+                  <Link
+                      href="/settings"
                       title="Storage & Settings"
                       className="p-2 rounded-xl bg-slate-100 hover:bg-white text-slate-600 hover:text-blue-600 transition-all border border-slate-200"
                   >
                       <span className="text-lg leading-none">⚙️</span>
-                  </button>
+                  </Link>
 
                   <div className="w-[1px] h-6 bg-slate-200 mx-1"></div>
 
@@ -773,6 +769,7 @@ export default function Home({ params: paramsPromise }) {
                       selectedFolders={selectedFolders}
                       onFileSelect={toggleFile}
                       onFolderSelect={toggleFolder}
+                      onFilesDropped={(files, targetFolderId) => setDroppedFiles({ files, targetFolderId })}
                     />
                 </div>
 

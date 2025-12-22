@@ -6,7 +6,7 @@ import { useEncryption } from '../contexts/EncryptionContext';
 import { unwrapKey, wrapKey } from '@/lib/envelopeCipher';
 
 export default function ShareModal({ file, isOpen, onClose }) {
-    const { encryptionKey, salt, isUnlocked } = useEncryption();
+    const { encryptionKey, salt, isUnlocked, masterPassword } = useEncryption();
     const [loading, setLoading] = useState(false);
     const [sharing, setSharing] = useState(false);
     const [shareUrl, setShareUrl] = useState('');
@@ -51,7 +51,7 @@ export default function ShareModal({ file, isOpen, onClose }) {
             const parts = await fetchFilePartMetadata(file.id);
 
             // 2. Create decrypted stream
-            const decryptedStream = await createDecryptedStream(file, encryptionKey, parts);
+            const decryptedStream = await createDecryptedStream(file, encryptionKey, parts, null, false, masterPassword);
 
             // 3. Wrap this stream into a "File-like" object for the uploader
             const fileWrapper = {

@@ -25,20 +25,26 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
     }
   }));
 
-  // Handle external files (e.g. from global DropZone)
+  // Handle external files (e.g. from global DropZone or FolderCard)
   useEffect(() => {
-    if (externalFiles && externalFiles.length > 0) {
+    if (!externalFiles) return;
+
+    // Handle both FileList/Array (global drop) AND { files, targetFolderId } (folder drop)
+    if (externalFiles.targetFolderId && externalFiles.files) {
+      addFilesToQueue(externalFiles.files, externalFiles.targetFolderId);
+    } else if (externalFiles.length > 0) {
       addFilesToQueue(externalFiles);
     }
   }, [externalFiles]);
 
-  const addFilesToQueue = (fileList) => {
+  const addFilesToQueue = (fileList, folderId = null) => {
     const newFiles = Array.from(fileList).map(file => ({
       file,
       id: Math.random().toString(36).substr(2, 9),
       status: 'pending', // pending, uploading, success, error
       progress: 0,
       error: null,
+      folderId: folderId || currentFolderId, // Use target folder if provided, else current
       progressStage: '', // 'Encrypting chunk X/Y', 'Uploading chunk X/Y', etc
       startTime: null, // Track when upload starts
       estimatedTimeRemaining: null, // ETA in seconds
@@ -122,29 +128,29 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
   const calculateETA = (fileSize, progress, uploadStartTime, stage, bytesAlreadyUploaded = 0) => {
     if (!uploadStartTime) return null;
     if (progress <= 0 || progress >= 100) return null;
-    
+
     // Only calculate ETA once we're in uploading phase (not encrypting)
     const isUploadingPhase = stage && stage.toLowerCase().includes('uploading');
     if (!isUploadingPhase) return null;
-    
+
     const elapsedMs = Date.now() - uploadStartTime;
     const elapsedSeconds = elapsedMs / 1000;
-    
+
     // Don't estimate if upload just started (less than 0.5 seconds)
     if (elapsedSeconds < 0.5) {
       return null;
     }
-    
+
     // Calculate bytes uploaded in current upload phase (not including already-uploaded before resume)
     const bytesUploadedNow = (fileSize * progress) / 100 - bytesAlreadyUploaded;
     const bytesPerSecond = bytesUploadedNow / elapsedSeconds;
-    
+
     if (bytesPerSecond <= 0) return null;
-    
+
     // Remaining bytes = total size - (already uploaded + now uploaded)
     const remainingBytes = fileSize - ((fileSize * progress) / 100);
     const estimatedSeconds = remainingBytes / bytesPerSecond;
-    
+
     return estimatedSeconds > 0 ? estimatedSeconds : null;
   };
 
@@ -160,7 +166,7 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
 
      // Update status to uploading and record start time
      const uploadStartTime = Date.now();
-     setQueue(prev => prev.map(f => 
+     setQueue(prev => prev.map(f =>
        f.id === fileItem.id ? { ...f, startTime: uploadStartTime } : f
      ));
      updateFileStatus(fileItem.id, 'uploading', 0);
@@ -179,13 +185,13 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
       let isResume = false;
 
       let chunkPlan = null;
-      
+
       if (checkData.exists && checkData.can_resume) {
         fileId = checkData.file_id;
         resumeFrom = Math.min(...checkData.missing_chunks);
         isResume = true;
         console.log(`[UPLOAD] ${fileItem.id} - ✓ Resume available: chunks ${resumeFrom}-${checkData.total_chunks}`);
-        
+
         // Retrieve the saved chunk plan from server
         console.log(`[UPLOAD] ${fileItem.id} - Retrieving chunk plan...`);
         const chunkPlanRes = await fetch(
@@ -197,7 +203,7 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
           chunkPlan = chunkPlanData.chunk_sizes;
           console.log(`[UPLOAD] ${fileItem.id} - ✓ Retrieved chunk plan: ${chunkPlan.length} chunks`);
         }
-        
+
         updateFileStatus(
           fileItem.id,
           'uploading',
@@ -215,7 +221,7 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
         try {
           // Track upload start time locally (not in state) so we can use it immediately
           let uploadStartTimeLocal = null;
-          
+
           await encryptFileChunks(
             fileItem.file,
             password,
@@ -223,15 +229,15 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
               // Calculate progress as percentage
               // partNumber already includes skipped chunks from resume, so use it directly
               const progress = (partNumber / totalParts) * 100;
-              
+
               // Detect when uploading phase starts and set uploadStartTime locally
               const isNowUploading = stage && stage.toLowerCase().includes('uploading');
-              
+
               if (isNowUploading && !uploadStartTimeLocal) {
                 uploadStartTimeLocal = Date.now();
                 console.log(`[UPLOAD] ${fileItem.id} - Upload phase started, tracking speed from now`);
               }
-              
+
               // Calculate ETA based on upload speed
               // For resumed uploads, use actual chunk sizes (not uniform) to calculate bytes already uploaded
               let bytesAlreadyUploaded = 0;
@@ -240,11 +246,11 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
                 bytesAlreadyUploaded = chunkPlan.slice(0, Math.max(0, resumeFrom - 1)).reduce((sum, size) => sum + size, 0);
               }
               const eta = calculateETA(fileItem.file.size, progress, uploadStartTimeLocal, stage, bytesAlreadyUploaded);
-              
+
               updateFileStatus(fileItem.id, 'uploading', progress, null, stage, eta);
               console.log(`[UPLOAD] ${fileItem.id} - ${stage} (${partNumber}/${totalParts}) | Progress: ${Math.round(progress)}% | ETA: ${eta ? formatTimeRemaining(eta) : 'calculating...'}`);
             },
-            currentFolderId,
+            fileItem.folderId, // Use the folderId stored in the file item
             abortController.signal,
             fileId,        // Pass file_id for resume
             resumeFrom,    // Pass resume starting point

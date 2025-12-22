@@ -36,21 +36,31 @@ export default function FileRow({ file, onFileDeleted, onContextMenu, onFileMove
       setDownloading(true);
       const { fetchFilePartMetadata, fetchAndDecryptFullFile } = await import('@/lib/clientDecryption');
       const parts = await fetchFilePartMetadata(file.id);
-      const blob = await fetchAndDecryptFullFile(file, key, parts);
+      const blob = await fetchAndDecryptFullFile(file, key, parts, null, false, masterPassword);
 
-      const url = window.URL.createObjectURL(blob);
+       // Revoke old URL if it exists
+       const oldCached = blobCache.get(file.id);
+       if (oldCached?.url) {
+         try {
+           URL.revokeObjectURL(oldCached.url);
+         } catch (e) {
+           console.warn('Failed to revoke old blob URL:', e);
+         }
+       }
 
-      // Cache if encrypted
-      if (file.is_encrypted) {
-        blobCache.set(file.id, { url, timestamp: Date.now() });
-      }
+       const url = window.URL.createObjectURL(blob);
 
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.original_filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+       // Cache if encrypted
+       if (file.is_encrypted) {
+         blobCache.set(file.id, { url, timestamp: Date.now() });
+       }
+
+       const a = document.createElement('a');
+       a.href = url;
+       a.download = file.original_filename;
+       document.body.appendChild(a);
+       a.click();
+       document.body.removeChild(a);
 
       await fetch(`/api/stats/file/${file.id}/download`, { method: 'POST' });
     } catch (err) {

@@ -8,7 +8,7 @@ import {
     fetchAndDecryptFullFile,
     createDecryptedStream
 } from '@/lib/clientDecryption';
-import { getSecureImage, cacheSecureImage, blobCache } from '@/lib/secureImageCache';
+import { getSecureImage, cacheSecureImage, blobCache, getCachedOrDecrypt } from '@/lib/secureImageCache';
 import Lightbox from 'yet-another-react-lightbox';
 import Thumbnails from 'yet-another-react-lightbox/plugins/thumbnails';
 import Zoom from 'yet-another-react-lightbox/plugins/zoom';
@@ -69,7 +69,7 @@ export default function FileLightbox({
     shareToken = null,
     initialParts = null
 }) {
-  const { encryptionKey: globalKey, isUnlocked: globalUnlocked, unlock } = useEncryption();
+  const { encryptionKey: globalKey, isUnlocked: globalUnlocked, unlock, masterPassword } = useEncryption();
 
   const encryptionKey = customKey || globalKey;
   const isUnlocked = !!customKey || globalUnlocked;
@@ -105,25 +105,27 @@ export default function FileLightbox({
       setError(null);
 
       let url = null;
-      const cached = blobCache.get(file.id);
 
-      if (cached) {
-        url = cached.url;
-      } else if (file.is_encrypted) {
+      if (file.is_encrypted) {
         if (!isUnlocked) {
           setLoading(false);
           return;
         }
-        const parts = initialParts || await fetchFilePartMetadata(file.id, shareToken);
-        const blob = await fetchAndDecryptFullFile(file, encryptionKey, parts, shareToken, !!customKey);
+        
+        // Use getCachedOrDecrypt to prevent concurrent fetches
+        const entry = await getCachedOrDecrypt(file.id, async () => {
+          const parts = initialParts || await fetchFilePartMetadata(file.id, shareToken);
+          const blob = await fetchAndDecryptFullFile(file, encryptionKey, parts, shareToken, !!customKey, masterPassword);
 
-        // Force MIME type for PDF/Audio if needed
-        let mimeType = blob.type;
-        if (file.mime_type?.includes('pdf')) mimeType = 'application/pdf';
+          // Force MIME type for PDF/Audio if needed
+          let mimeType = blob.type;
+          if (file.mime_type?.includes('pdf')) mimeType = 'application/pdf';
 
-        const finalBlob = new Blob([blob], { type: mimeType });
-        url = URL.createObjectURL(finalBlob);
-        blobCache.set(file.id, { url, timestamp: Date.now() });
+          const finalBlob = new Blob([blob], { type: mimeType });
+          return URL.createObjectURL(finalBlob);
+        });
+        
+        url = entry.url;
       } else {
         url = `/api/download?file_id=${file.id}`;
       }
