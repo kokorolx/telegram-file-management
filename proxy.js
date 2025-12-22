@@ -10,6 +10,7 @@ const PUBLIC_PATHS = [
   '/api/share',
   '/api/chunk',
   '/api/changelog',
+  '/api/features', // Feature flags are not sensitive
 ];
 
 export async function proxy(request) {
