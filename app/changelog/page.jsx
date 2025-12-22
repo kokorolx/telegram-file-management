@@ -1,393 +1,203 @@
-'use client';
-
-import { useEffect, useState } from 'react';
+import fs from 'fs';
+import path from 'path';
 import Link from 'next/link';
+
 import PublicHeader from '../components/PublicHeader';
 import PublicFooter from '../components/PublicFooter';
-import { useRouter } from 'next/navigation';
 
-// Parse inline markdown formatting (bold, code, links, italic)
-function parseInlineMarkdown(text) {
-  const parts = [];
-  let i = 0;
+// Helper to parse markdown content into structured data
+function parseChangelog(content) {
+  const lines = content.split('\n');
+  const sections = [];
+  let currentSection = null;
+  let currentSubSection = null;
 
-  while (i < text.length) {
-    // Bold text **text**
-    if (text.substr(i, 2) === '**') {
-      const endIndex = text.indexOf('**', i + 2);
-      if (endIndex !== -1) {
-        parts.push({
-          type: 'bold',
-          content: text.slice(i + 2, endIndex),
-        });
-        i = endIndex + 2;
-        continue;
-      }
-    }
+  lines.forEach(line => {
+    const trimmed = line.trim();
 
-    // Italic text *text* (but not **)
-    if (text[i] === '*' && text[i + 1] !== '*' && text[i - 1] !== '*') {
-      const endIndex = text.indexOf('*', i + 1);
-      if (endIndex !== -1 && text[endIndex + 1] !== '*') {
-        parts.push({
-          type: 'italic',
-          content: text.slice(i + 1, endIndex),
-        });
-        i = endIndex + 1;
-        continue;
-      }
-    }
+    if (!trimmed) return;
 
-    // Code text `code`
-    if (text[i] === '`') {
-      const endIndex = text.indexOf('`', i + 1);
-      if (endIndex !== -1) {
-        parts.push({
-          type: 'code',
-          content: text.slice(i + 1, endIndex),
-        });
-        i = endIndex + 1;
-        continue;
-      }
-    }
-
-    // Links [text](url)
-    if (text[i] === '[') {
-      const endBracket = text.indexOf(']', i);
-      if (endBracket !== -1 && text[endBracket + 1] === '(') {
-        const endParen = text.indexOf(')', endBracket);
-        if (endParen !== -1) {
-          parts.push({
-            type: 'link',
-            text: text.slice(i + 1, endBracket),
-            url: text.slice(endBracket + 2, endParen),
-          });
-          i = endParen + 1;
-          continue;
+    if (trimmed.startsWith('## ')) {
+      // New version section
+      if (currentSection) {
+        if (currentSubSection) {
+          currentSection.subSections.push(currentSubSection);
+          currentSubSection = null;
         }
+        sections.push(currentSection);
       }
-    }
 
-    // Regular text
-    let nextSpecial = text.length;
-    const positions = [
-      text.indexOf('**', i + 1),
-      text.indexOf('*', i + 1),
-      text.indexOf('`', i + 1),
-      text.indexOf('[', i + 1),
-    ].filter(p => p !== -1);
+      const title = trimmed.replace('## ', '');
+      const dateMatch = title.match(/\[(.*?)\]/);
+      const date = dateMatch ? dateMatch[1] : '';
+      const cleanTitle = title.replace(/\[.*?\]\s*-\s*/, '').trim();
 
-    if (positions.length > 0) {
-      nextSpecial = Math.min(...positions);
-    }
-
-    const content = text.slice(i, nextSpecial);
-    if (content) {
-      if (parts.length > 0 && parts[parts.length - 1].type === 'text') {
-        parts[parts.length - 1].content += content;
-      } else {
-        parts.push({
-          type: 'text',
-          content,
-        });
+      currentSection = {
+        date,
+        title: cleanTitle,
+        subSections: []
+      };
+    } else if (trimmed.startsWith('### ')) {
+      // Subsection (e.g., New Features, Security)
+      if (currentSubSection && currentSection) {
+        currentSection.subSections.push(currentSubSection);
       }
-    }
+      currentSubSection = {
+        title: trimmed.replace('### ', ''),
+        items: []
+      };
+    } else if (trimmed.startsWith('- ')) {
+      // List item
+      const itemContent = trimmed.replace('- ', '');
+      // Parse bold text like **Text**
+      const parts = itemContent.split('**');
+      const item = {
+        highlight: parts.length > 1 ? parts[1] : '',
+        text: parts.length > 2 ? parts[2].replace(/^\s*-\s*/, '') : parts[0]
+      };
 
-    i = nextSpecial;
-  }
-
-  return parts;
-}
-
-// Render inline markdown parts
-function renderInlineMarkdown(parts) {
-  return parts.map((part, idx) => {
-    switch (part.type) {
-      case 'bold':
-        return (
-          <strong key={idx} className="font-bold text-white">
-            {renderInlineMarkdown(parseInlineMarkdown(part.content))}
-          </strong>
-        );
-      case 'italic':
-        return (
-          <em key={idx} className="italic">
-            {renderInlineMarkdown(parseInlineMarkdown(part.content))}
-          </em>
-        );
-      case 'code':
-        return (
-          <code key={idx} className="bg-gray-800 px-2 py-1 rounded text-sm font-mono text-blue-300">
-            {part.content}
-          </code>
-        );
-      case 'link':
-        return (
-          <a
-            key={idx}
-            href={part.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-400 hover:text-blue-300 underline"
-          >
-            {part.text}
-          </a>
-        );
-      case 'text':
-      default:
-        return part.content;
+      if (currentSubSection) {
+        currentSubSection.items.push({ type: 'bullet', ...item });
+      } else if (currentSection) {
+         // Fallback if no subsection
+         // create a default one or just ignore? let's ignore for now or add to a misc
+      }
+    } else if (/^\d+\./.test(trimmed)) {
+      // Numbered list
+       const itemContent = trimmed.replace(/^\d+\.\s*/, '');
+       if (currentSubSection) {
+        currentSubSection.items.push({ type: 'number', text: itemContent });
+      }
+    } else if (trimmed.startsWith('---')) {
+       // Separator, ignore
+    } else if (trimmed.startsWith('# ')) {
+       // Main title, ignore
+    } else {
+      // Paragraph text
+      if (currentSubSection) {
+         currentSubSection.items.push({ type: 'text', text: trimmed });
+      } else if (currentSection) {
+         // Description for the version?
+         if (!currentSection.description) currentSection.description = [];
+         currentSection.description.push(trimmed);
+      }
     }
   });
-}
 
-// Simple markdown parser for changelog
-function parseMarkdown(text) {
-  const lines = text.split('\n');
-  const elements = [];
-  let i = 0;
-  let inList = false;
-  let listItems = [];
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Headers
-    if (line.startsWith('# ')) {
-      if (inList) {
-        elements.push({
-          type: 'ul',
-          items: listItems,
-        });
-        listItems = [];
-        inList = false;
-      }
-      elements.push({
-        type: 'h1',
-        content: line.slice(2),
-      });
-    } else if (line.startsWith('## ')) {
-      if (inList) {
-        elements.push({
-          type: 'ul',
-          items: listItems,
-        });
-        listItems = [];
-        inList = false;
-      }
-      elements.push({
-        type: 'h2',
-        content: line.slice(3),
-      });
-    } else if (line.startsWith('### ')) {
-      if (inList) {
-        elements.push({
-          type: 'ul',
-          items: listItems,
-        });
-        listItems = [];
-        inList = false;
-      }
-      elements.push({
-        type: 'h3',
-        content: line.slice(4),
-      });
-    } else if (line.startsWith('#### ')) {
-      if (inList) {
-        elements.push({
-          type: 'ul',
-          items: listItems,
-        });
-        listItems = [];
-        inList = false;
-      }
-      elements.push({
-        type: 'h4',
-        content: line.slice(5),
-      });
-    }
-    // Horizontal rule
-    else if (line.trim() === '---') {
-      if (inList) {
-        elements.push({
-          type: 'ul',
-          items: listItems,
-        });
-        listItems = [];
-        inList = false;
-      }
-      elements.push({
-        type: 'hr',
-      });
-    }
-    // List items
-    else if (line.startsWith('- ')) {
-      inList = true;
-      listItems.push(line.slice(2));
-    }
-    // Numbered list
-    else if (/^\d+\. /.test(line)) {
-      if (inList) {
-        elements.push({
-          type: 'ul',
-          items: listItems,
-        });
-        listItems = [];
-        inList = false;
-      }
-      const content = line.replace(/^\d+\. /, '');
-      elements.push({
-        type: 'ol-item',
-        content,
-      });
-    }
-    // Empty line
-    else if (line.trim() === '') {
-      if (inList) {
-        elements.push({
-          type: 'ul',
-          items: listItems,
-        });
-        listItems = [];
-        inList = false;
-      }
-    }
-    // Regular paragraph
-    else if (line.trim()) {
-      if (inList) {
-        elements.push({
-          type: 'ul',
-          items: listItems,
-        });
-        listItems = [];
-        inList = false;
-      }
-      elements.push({
-        type: 'p',
-        content: line,
-      });
-    }
-
-    i++;
+  // Push last ones
+  if (currentSubSection && currentSection) {
+    currentSection.subSections.push(currentSubSection);
+  }
+  if (currentSection) {
+    sections.push(currentSection);
   }
 
-  if (inList) {
-    elements.push({
-      type: 'ul',
-      items: listItems,
-    });
-  }
-
-  return elements;
+  return sections;
 }
 
-function renderMarkdownElement(element, index) {
-  switch (element.type) {
-    case 'h1':
-      return (
-        <h1 key={index} className="text-5xl md:text-6xl font-extrabold tracking-tight mb-8 text-white">
-          {renderInlineMarkdown(parseInlineMarkdown(element.content))}
-        </h1>
-      );
-    case 'h2':
-      return (
-        <h2 key={index} className="text-3xl font-bold mt-12 mb-6 text-white border-b border-white/10 pb-3">
-          {renderInlineMarkdown(parseInlineMarkdown(element.content))}
-        </h2>
-      );
-    case 'h3':
-      return (
-        <h3 key={index} className="text-xl font-bold mt-6 mb-4 text-blue-400">
-          {renderInlineMarkdown(parseInlineMarkdown(element.content))}
-        </h3>
-      );
-    case 'h4':
-      return (
-        <h4 key={index} className="text-lg font-semibold mt-4 mb-3 text-gray-300">
-          {renderInlineMarkdown(parseInlineMarkdown(element.content))}
-        </h4>
-      );
-    case 'hr':
-      return <hr key={index} className="my-12 border-white/10" />;
-    case 'ul':
-      return (
-        <ul key={index} className="mb-6 space-y-2 ml-6 text-gray-300">
-          {element.items.map((item, i) => (
-            <li key={i} className="list-disc">
-              {renderInlineMarkdown(parseInlineMarkdown(item))}
-            </li>
-          ))}
-        </ul>
-      );
-    case 'ol-item':
-      return (
-        <div key={index} className="mb-3 ml-6 text-gray-300">
-          {renderInlineMarkdown(parseInlineMarkdown(element.content))}
-        </div>
-      );
-    case 'p':
-      return (
-        <p key={index} className="mb-4 text-gray-300 leading-relaxed">
-          {renderInlineMarkdown(parseInlineMarkdown(element.content))}
-        </p>
-      );
-    default:
-      return null;
-  }
-}
-
-export default function ChangelogPage() {
-  const router = useRouter();
-  const [changelog, setChangelog] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const fetchChangelog = async () => {
-      try {
-        const response = await fetch('/api/changelog');
-        if (!response.ok) {
-          throw new Error('Failed to fetch changelog');
-        }
-        const text = await response.text();
-        setChangelog(text);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchChangelog();
-  }, []);
-
-  const elements = changelog ? parseMarkdown(changelog) : [];
+export default async function ChangelogPage() {
+  const filePath = path.join(process.cwd(), 'PUBLIC_CHANGELOG.md');
+  const fileContent = fs.readFileSync(filePath, 'utf8');
+  const changes = parseChangelog(fileContent);
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white selection:bg-blue-500/30">
+    <div className="min-h-screen flex flex-col bg-[#050505] text-white selection:bg-blue-500/30">
       {/* Decorative Background Elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[120px] animate-pulse"></div>
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-600/10 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '1s' }}></div>
       </div>
 
-      {/* Navigation */}
-      <PublicHeader onLaunch={() => router.push('/?login=true')} activePage="changelog" />
+      <PublicHeader />
 
-      <main className="relative pt-32 pb-20 px-6">
-        <div className="max-w-4xl mx-auto">
-          {loading ? (
-            <div className="flex items-center justify-center py-32">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-            </div>
-          ) : error ? (
-            <div className="bg-red-500/10 border border-red-500/50 rounded-2xl p-6 mb-8">
-              <p className="text-red-200">Error loading changelog: {error}</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {elements.map((element, index) => renderMarkdownElement(element, index))}
-            </div>
-          )}
+      <main className="relative flex-grow pt-24 pb-16 px-4 sm:px-6 lg:px-8 z-10">
+        <div className="max-w-4xl mx-auto space-y-8">
+
+          {/* Header */}
+          <div className="text-center mb-12 animate-fade-in">
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent mb-4 tracking-tight">
+              What's New
+            </h1>
+            <p className="text-slate-400 text-lg max-w-2xl mx-auto leading-relaxed">
+              Updates, improvements, and security enhancements
+            </p>
+          </div>
+
+          {/* Timeline */}
+          <div className="relative space-y-8 before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-blue-500/50 before:via-slate-500/50 before:to-transparent">
+
+            {changes.map((change, index) => (
+              <div key={index} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group animate-fade-in-smooth" style={{ animationDelay: `${index * 100}ms` }}>
+
+                {/* Dot */}
+                <div className="flex items-center justify-center w-10 h-10 rounded-full border border-blue-500 bg-blue-500/20 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 text-xl">
+                  {change.subSections[0]?.title.includes('Security') ? '🔒' :
+                   change.subSections[0]?.title.includes('Features') ? '✨' : '🚀'}
+                </div>
+
+                {/* Content Card */}
+                <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-6 rounded-2xl hover:shadow-md transition-all duration-300 bg-slate-900/50 border border-slate-800/50 backdrop-blur-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
+                    <h2 className="text-xl font-bold text-white">{change.title || 'Update'}</h2>
+                    <span className="px-3 py-1 text-xs font-semibold text-blue-400 bg-blue-500/20 rounded-full whitespace-nowrap self-start border border-blue-500/30">
+                      {change.date}
+                    </span>
+                  </div>
+
+                  {change.description && change.description.length > 0 && (
+                    <div className="mb-4 text-slate-400 space-y-2 text-sm italic">
+                      {change.description.map((desc, i) => <p key={i}>{desc}</p>)}
+                    </div>
+                  )}
+
+                  <div className="space-y-6">
+                    {change.subSections.map((section, secIdx) => (
+                      <div key={secIdx}>
+                        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300 mb-3 flex items-center gap-2">
+                         {section.title}
+                        </h3>
+                        <ul className="space-y-3">
+                          {section.items.map((item, itemIdx) => (
+                            <li key={itemIdx} className="text-sm text-slate-300 leading-relaxed flex gap-2">
+                              {item.type === 'bullet' && (
+                                <>
+                                  <span className="text-blue-400 shrink-0 mt-1">•</span>
+                                  <span>
+                                    {item.highlight && <strong className="text-blue-300 font-semibold">{item.highlight}</strong>}
+                                    {item.highlight && item.text ? ' - ' : ''}
+                                    {item.text}
+                                  </span>
+                                </>
+                              )}
+                              {item.type === 'number' && (
+                                <span className="flex gap-2">
+                                  <span className="font-mono text-slate-500 font-bold shrink-0">{itemIdx + 1}.</span>
+                                  <span>{item.text}</span>
+                                </span>
+                              )}
+                              {item.type === 'text' && (
+                                <p className="text-slate-400 bg-slate-800/50 p-3 rounded-lg border border-slate-700/50 text-xs leading-5">
+                                  {item.text}
+                                </p>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+          </div>
+
+          <div className="text-center pt-12 pb-4">
+             <Link href="/" className="inline-flex items-center justify-center px-6 py-3 border border-blue-500 text-base font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm hover:shadow-lg hover:shadow-blue-500/20 transition-all duration-200">
+                Start Using Telegram Vault
+             </Link>
+          </div>
+
         </div>
       </main>
 

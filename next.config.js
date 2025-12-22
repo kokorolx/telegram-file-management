@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Disable sourcemaps in production for security and performance
+  // Sourcemaps expose source code and implementation details
+  // Development builds will still have sourcemaps for debugging
+  productionBrowserSourceMaps: false,
   async headers() {
     return [
       {

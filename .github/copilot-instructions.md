@@ -1,183 +1,96 @@
-# Telegram File Management - AI Agent Instructions
+# Telegram File Management - AI Coding Instructions
 
-## Architecture Overview
+## Core Architecture
 
-This is a **Zero-Knowledge encrypted file storage system** using Telegram as a backend. The core principle: **all encryption happens client-side** in the browser using Web Crypto API. The server never sees plaintext or encryption keys.
+### Zero-Knowledge Encryption Model
+- **Critical Security Principle**: All encryption/decryption happens EXCLUSIVELY in the browser. The server NEVER sees unencrypted content or the master password.
+- **Key Derivation**: Uses PBKDF2 (100,000 iterations, SHA-256) to derive a 256-bit AES key from the master password + user-specific salt.
+- **Encryption Key Lifecycle**: The encryption key lives only in browser RAM via [app/contexts/EncryptionContext.js](app/contexts/EncryptionContext.js). On logout or browser close, it's destroyed.
+- **Chunk Encryption**: Files are split into random-sized chunks (2-3MB) and each chunk is encrypted with AES-256-GCM using a unique IV (12 bytes) and auth tag (16 bytes).
 
-### Key Components
+### Storage Architecture
+- **Primary Storage**: Telegram Bot API stores encrypted chunks as documents. Each chunk returns a `telegram_file_id` (opaque identifier).
+- **Dual-Upload Support**: Optional S3/R2 backup configured per-user. See [app/api/upload/chunk/route.js](app/api/upload/chunk/route.js) for dual-upload implementation.
+- **Metadata Database**: PostgreSQL stores file metadata (filename, size, MIME type), chunk metadata (IVs, auth tags, `telegram_file_id`), and folder structure. See [docs/DATABASE.md](docs/DATABASE.md) for schema details.
 
-- **Frontend**: Next.js 14 App Router with React 19 (`'use client'` for all interactive components)
-- **Backend**: Next.js API routes (Node.js) acting as proxy between browser and Telegram
-- **Database**: PostgreSQL via TypeORM (metadata only - NO file content)
-- **Storage**: Telegram Bot API stores encrypted file chunks as documents
-- **Encryption**: Browser-side AES-256-GCM with PBKDF2 key derivation (100k iterations)
+### Service-Repository Pattern
+- **Business Logic**: Lives in [lib/services/](lib/services/) (e.g., `FileService`, `RecoveryCodeService`, `StatsService`).
+- **Data Access**: Handled by repositories in [lib/repositories/](lib/repositories/). All repos extend [lib/repositories/BaseRepository.js](lib/repositories/BaseRepository.js).
+- **Entities**: TypeORM entities in [lib/entities/](lib/entities/) define database schema.
+- **Storage Abstraction**: [lib/storage/](lib/storage/) provides `StorageProvider` interface with `TelegramStorageProvider` and `S3StorageProvider` implementations.
 
-### Data Flow Pattern
+## Tech Stack & Key Patterns
 
-1. **Upload**: Browser → encrypts file chunks → API route → Telegram Bot API → stores encrypted `telegram_file_id` in PostgreSQL
-2. **Download**: Browser requests metadata → fetches encrypted chunks from Telegram via API proxy → decrypts in browser
+### Framework & Database
+- **Next.js 16+ (App Router)**: All routes in `app/api/` use `NextResponse`. Client components must have `'use client'` directive.
+- **TypeORM**: Primary ORM. Initialize via [lib/data-source.js](lib/data-source.js) using `getDataSource()`. Legacy code uses raw `pg` pool from [lib/db.js](lib/db.js) - migrate away when touching old code.
+- **Migrations**: TypeORM migrations in [lib/migrations/](lib/migrations/). Run with `npm run migration:run`.
 
-## Critical Patterns
+### Authentication
+- **Session Cookie**: `session_user` cookie stores base64-encoded JSON with `{ id, username }`. Parse with `getUserFromSession()` from [lib/auth.js](lib/auth.js).
+- **API Auth**: All API routes must call `await requireAuth(request)` to verify authentication. Returns `{ authenticated: boolean, user: { id, username } }`.
+- **Master Password Unlock**: Separate from login. User logs in with account password, then "unlocks vault" with master password to derive encryption key client-side.
 
-### 1. Encryption Layer (`lib/envelopeCipher.js`, `lib/browserUploadEncryption.js`)
+### File Upload/Download Flow
+- **Upload**: Client encrypts chunks → POSTs to `/api/upload/chunk` with encrypted data (base64), IV, auth tag → Server stores in Telegram/S3 and saves metadata → Returns success with chunk ID.
+- **Download**: Client fetches metadata via `/api/files/[id]/parts` → For each part, GETs `/api/chunk/[fileId]/[partNumber]` → Server proxies from Telegram → Client decrypts using stored key + metadata.
+- **Streaming**: [lib/clientDecryption.js](lib/clientDecryption.js) and [lib/fileService.js](lib/fileService.js) implement `ReadableStream` for video/audio playback with on-the-fly decryption.
 
-- **Envelope encryption**: Each file gets a unique DEK (Data Encryption Key), wrapped by KEK (Key Encryption Key) derived from master password
-- Files are split into **randomized chunks** (2MB-3MB) to prevent traffic analysis
-- Each chunk has unique IV and auth tag stored in `file_parts` table
-- Master password NEVER leaves browser - stored in `EncryptionContext` RAM only
+## Development Workflows
 
-```javascript
-// When working with encryption:
-// - Always use generateDEK() for new files
-// - Store encrypted_file_key, key_iv, and encryption_version in DB
-// - Each chunk needs: iv, auth_tag, telegram_file_id
-```
+### Setup & Database
+- **Initial Setup**: `npm install` → `npm run setup-db` (creates tables) → Configure `.env.local` with `DATABASE_URL`, bot tokens.
+- **Migrations**: Create in [lib/migrations/](lib/migrations/), then `npm run migration:run` to apply.
+- **Development Server**: `npm run dev` starts Next.js on port 3000 (default).
 
-### 2. Repository Pattern
+### Testing
+- **Test Framework**: Node.js native test runner (`node:test`).
+- **Run Tests**:
+  - Single test: `node --test __tests__/RecoveryCodeService.test.js`
+  - All tests: `node __tests__/run-all-tests.js` or `npm run test:all-recovery`
+- **Test Location**: All tests in [__tests__/](__tests__/) directory.
+- **Testing Guide**: See [TESTING_GUIDE.md](TESTING_GUIDE.md) for feature-specific test procedures (manual UI testing).
 
-All database access goes through repositories extending `BaseRepository`:
+### Debugging
+- **Telegram Issues**: Check [lib/telegram.js](lib/telegram.js) for bot interactions. Common issues: Invalid bot token, user ID mismatch.
+- **Encryption Issues**: Verify IV/auth tag stored correctly in `file_parts` table. Check browser console for Web Crypto API errors.
+- **Database Queries**: Set `logging: true` in [lib/data-source.js](lib/data-source.js) to log SQL queries in dev.
 
-```javascript
-// lib/repositories/*Repository.js pattern:
-import { BaseRepository } from "./BaseRepository.js";
-import { EntityName } from "../entities/EntityName.js";
+## Code Conventions
 
-export class EntityRepository extends BaseRepository {
-  constructor() {
-    super(EntityName);
-  }
-  // Custom query methods here
-}
+### API Routes
+- **Structure**: `app/api/[resource]/route.js` exports `GET`, `POST`, etc. as named async functions.
+- **Response**: Always use `NextResponse.json({ ... })` for JSON responses. Include proper HTTP status codes.
+- **Auth Check**: Always `await requireAuth(request)` at the start of protected routes.
+- **Error Handling**: Wrap in `try-catch`, return `NextResponse.json({ error: 'message' }, { status: 500 })` on failure.
 
-export const entityRepository = new EntityRepository(); // Singleton
-```
+### Services & Repositories
+- **Services**: Export singleton instances (e.g., `export const fileService = new FileService()`). Import as `import { fileService } from '@/lib/fileService'`.
+- **Repositories**: Extend `BaseRepository`, pass entity to constructor. Use async/await for all DB operations.
+- **Validation**: Use `zod` schemas for request validation. Define schemas at top of service/route file.
 
-**Always use existing repositories** - don't access TypeORM directly in API routes.
+### Client-Side Code
+- **Encryption Context**: Access via `useEncryption()` hook. Check `isUnlocked` before attempting decrypt operations.
+- **User Context**: Access via `useUser()` hook for current user info (`{ id, username }`).
+- **Encryption Operations**: All encryption/decryption code in [lib/clientDecryption.js](lib/clientDecryption.js) and [lib/browserUploadEncryption.js](lib/browserUploadEncryption.js). Never implement crypto primitives elsewhere.
 
-### 3. Service Layer Pattern
+## Key Files Reference
 
-Business logic lives in services (`lib/services/*Service.js`, `lib/fileService.js`):
+| File | Purpose |
+|------|---------|
+| [lib/fileService.js](lib/fileService.js) | Core file upload/download orchestration, chunk management |
+| [lib/data-source.js](lib/data-source.js) | TypeORM config, entity registration, DB connection |
+| [lib/auth.js](lib/auth.js) | Session parsing, authentication middleware |
+| [lib/clientDecryption.js](lib/clientDecryption.js) | Browser-side decryption, streaming, key derivation |
+| [app/contexts/EncryptionContext.js](app/contexts/EncryptionContext.js) | React context for encryption key management |
+| [lib/storage/TelegramStorageProvider.js](lib/storage/TelegramStorageProvider.js) | Telegram Bot API integration |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | High-level system design, data flows |
+| [docs/SECURITY.md](docs/SECURITY.md) | Detailed cryptography, threat model |
+| [docs/DATABASE.md](docs/DATABASE.md) | PostgreSQL schema, relationships |
 
-- `fileService.handleUploadChunk()` - processes chunk uploads + stats
-- `statsService` - tracks storage/bandwidth per user/folder/bot
-- `FolderService` - handles nested folder operations
-
-API routes should be thin - delegate to services for complex operations.
-
-### 4. Next.js API Routes Structure
-
-```javascript
-// app/api/[resource]/route.js pattern:
-import { requireAuth } from '@/lib/auth';
-import { NextResponse } from 'next/server';
-
-export const dynamic = 'force-dynamic'; // Disable caching
-
-export async function POST(request) {
-  const auth = await requireAuth(request);
-  if (!auth.authenticated) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  const userId = auth.user?.id;
-  // ... delegate to service layer
-}
-```
-
-### 5. TypeORM Entity Schema Pattern
-
-Entities use `EntitySchema` (not decorators) in `lib/entities/*.js`:
-
-```javascript
-import { EntitySchema } from "typeorm";
-
-export const File = new EntitySchema({
-  name: "File",
-  tableName: "files",
-  columns: { /* ... */ },
-  relations: { /* ... */ }
-});
-```
-
-Database initialization: `await getDataSource()` from `lib/data-source.js` (singleton pattern).
-
-### 6. Client-Side State Management
-
-- **UserContext** (`app/contexts/UserContext.js`): Authentication state
-- **EncryptionContext** (`app/contexts/EncryptionContext.js`): Master password + derived key in RAM
-  - `unlock(password, salt)` - derives key and stores in memory
-  - `lock()` - clears key and cache
-  - Auto-locks on logout/reload
-
-### 7. Multi-User & Multi-Bot Support
-
-- Each user can configure their own Telegram bot via `user_bots` table (encrypted tokens)
-- Fallback hierarchy: User bot → Global DB settings → `process.env.TELEGRAM_BOT_TOKEN`
-- See `lib/telegram.js` `getBotToken(userId)` for resolution logic
-
-## Development Workflow
-
-```bash
-# Setup
-npm install
-npm run setup-db              # Initialize PostgreSQL schema
-
-# Development
-npm run dev                   # Next.js dev server on :3000
-
-# Database migrations
-node scripts/migrate-*.js     # Manual migration scripts in scripts/
-```
-
-### Environment Variables
-
-Required in `.env.local`:
-- `DATABASE_URL` - PostgreSQL connection string
-- `TELEGRAM_BOT_TOKEN` - Fallback bot token (can be configured per-user via UI)
-- `NEXTAUTH_SECRET` - Session encryption key
-
-## Common Tasks
-
-### Adding a New API Endpoint
-
-1. Create `app/api/[resource]/route.js` with `requireAuth()` check
-2. Add service method in `lib/services/` if complex logic needed
-3. Use existing repository pattern - don't create raw SQL
-
-### Adding a New Database Entity
-
-1. Create `lib/entities/NewEntity.js` using `EntitySchema` pattern
-2. Add to `lib/data-source.js` entities array
-3. Create repository in `lib/repositories/NewEntityRepository.js`
-4. Write SQL migration in `db/migrations/` if needed (manual execution)
-
-### Working with Encrypted Files
-
-- **Never** decrypt on server - always return encrypted chunks
-- Browser handles decryption via `lib/clientDecryption.js`
-- Streaming playback uses `ReadableStream` for memory efficiency (see `FileViewer.jsx`)
-
-### Context Menu & Multi-Select
-
-- Uses custom hooks: `useMultiSelect()`, `useMoveContextMenu()`
-- Multi-select state managed via `Set<id>` for files and folders separately
-- Context menus support both single-item and batch operations
-
-## Security Considerations
-
-- **Master password loss = permanent data loss** - no recovery mechanism by design
-- Session cookies are httpOnly, 1-week expiry
-- File chunks authenticated with GCM tags - verify on decrypt
-- User isolation: always filter by `user_id` in queries (see `requireAuth()` for userId extraction)
-
-## Testing & Debugging
-
-- Check Network tab for API errors (encrypted payloads are base64)
-- Console logs show encryption stages: "Fetching chunks...", "Decrypting part X/Y..."
-- Use `scripts/diag.js` for database diagnostics
-- Telegram API errors logged server-side with `[TELEGRAM]` prefix
-
-## Deployment (Vercel)
-
-- Optimized for Vercel + Neon/Supabase PostgreSQL
-- Set `DATABASE_URL`, `NEXTAUTH_SECRET`, `TELEGRAM_BOT_TOKEN` in Vercel env vars
-- SSL config auto-detected in `lib/data-source.js` based on connection string
+## Common Pitfalls
+- **Never decrypt on server**: Server code must never attempt to decrypt file content. All decryption is client-side.
+- **TypeORM initialization**: Always `await getDataSource()` before using repositories. Don't assume it's initialized.
+- **Session cookie encoding**: `session_user` is base64-encoded JSON. Always decode with `Buffer.from(..., 'base64').toString('utf-8')`.
+- **Chunk reassembly**: Chunks must be reassembled in `part_number` order. Sort by `part_number ASC` when fetching from DB.
+- **IV/AuthTag format**: Stored as hex strings in DB, must convert to `Uint8Array` for Web Crypto API.

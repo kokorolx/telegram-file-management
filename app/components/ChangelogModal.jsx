@@ -64,16 +64,18 @@ export default function ChangelogModal({ isOpen, onClose, changelog, version }) 
 
         {/* Footer */}
         <div className="bg-gray-50 border-t border-gray-200 px-6 py-4 flex gap-3">
+          <a
+            href="/changelog"
+            onClick={handleClose}
+            className="flex-1 px-4 py-2 rounded-lg font-medium transition-colors bg-gray-200 text-gray-700 hover:bg-gray-300 text-center"
+          >
+            Read more
+          </a>
           <button
             onClick={handleClose}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-              scrolledToBottom
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            }`}
-            disabled={!scrolledToBottom}
+            className="flex-1 px-4 py-2 rounded-lg font-medium transition-colors bg-blue-600 text-white hover:bg-blue-700"
           >
-            {scrolledToBottom ? '✓ Got It' : 'Read more...'}
+            Close
           </button>
         </div>
       </div>
