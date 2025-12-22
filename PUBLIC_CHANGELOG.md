@@ -2,6 +2,26 @@
 
 All user-facing updates and improvements to Telegram Vault.
 
+## [December 22, 2025] - Recovery Code System (Coming Soon)
+
+### 🔐 Enhanced Security
+- **Master Password Recovery Codes** - Secure way to reset your master password if you forget it
+- **One-Time Use Codes** - Generate a set of 10 unique recovery codes (each code works once)
+- **Never Expires?** - Codes are valid for 1 year from generation
+- **Zero-Knowledge Design** - We cannot reset your password for you; only you can with your codes
+
+### 💾 How to Use
+1. Go to Settings → Recovery & Security
+2. Click "Generate Recovery Codes"
+3. Verify your login password
+4. Save the 10 codes in a secure location (printed, written down, or password manager)
+5. If you forget your master password, use any code to reset it
+
+### 🎯 What This Means
+Your master password is truly irreplaceable—but we've given you a backup plan. These codes let you recover your vault if you forget your password, without us being able to access your data.
+
+---
+
 ## [December 22, 2025] - Personal S3 Backup Configuration
 
 ### ✨ New Features

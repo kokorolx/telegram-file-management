@@ -1,24 +1,53 @@
+import { NextResponse } from 'next/server';
 import { readFileSync } from 'fs';
-import path from 'path';
+import { join } from 'path';
+import { getLatestChangelogHTML, getAllVersions } from '@/lib/changelogParser';
 
+export const dynamic = 'force-dynamic';
+
+/**
+ * GET /api/changelog
+ * 
+ * Returns the latest changelog entry from PUBLIC_CHANGELOG.md
+ * 
+ * Response:
+ * {
+ *   "version": "December 22, 2025",
+ *   "html": "<h2>...html content...</h2>",
+ *   "allVersions": [
+ *     { "version": "December 22, 2025", "title": "Recovery Code System (Coming Soon)" },
+ *     ...
+ *   ]
+ * }
+ */
 export async function GET() {
   try {
-    // Serve the user-friendly PUBLIC_CHANGELOG instead of technical CHANGELOG
-    const changelogPath = path.join(process.cwd(), 'PUBLIC_CHANGELOG.md');
-    const content = readFileSync(changelogPath, 'utf-8');
+    // Read PUBLIC_CHANGELOG.md
+    const changelogPath = join(process.cwd(), 'PUBLIC_CHANGELOG.md');
+    const markdown = readFileSync(changelogPath, 'utf-8');
 
-    return new Response(content, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/markdown; charset=utf-8',
-        'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
-      },
+    // Extract latest version
+    const { version, html } = getLatestChangelogHTML(markdown);
+    const allVersions = getAllVersions(markdown);
+
+    if (!version || !html) {
+      return NextResponse.json(
+        { success: false, error: 'No changelog found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      version,
+      html,
+      allVersions
     });
   } catch (error) {
-    console.error('Failed to read PUBLIC_CHANGELOG.md:', error);
-    return new Response('Failed to load changelog', {
-      status: 500,
-      headers: { 'Content-Type': 'text/plain' },
-    });
+    console.error('[API] Changelog retrieval error:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to retrieve changelog' },
+      { status: 500 }
+    );
   }
 }

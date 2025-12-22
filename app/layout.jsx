@@ -7,6 +7,7 @@ export const metadata = {
 
 import { EncryptionProvider } from './contexts/EncryptionContext';
 import { UserProvider } from './contexts/UserContext';
+import { ChangelogProvider } from './components/ChangelogProvider';
 
 export default function RootLayout({ children }) {
   return (
@@ -15,7 +16,9 @@ export default function RootLayout({ children }) {
         <div className="min-h-screen bg-[#f0f4f8]">
           <UserProvider>
             <EncryptionProvider>
-              {children}
+              <ChangelogProvider>
+                {children}
+              </ChangelogProvider>
             </EncryptionProvider>
           </UserProvider>
         </div>

@@ -10,7 +10,12 @@
     "lint": "eslint .",
     "setup-db": "node scripts/init-db.js",
     "migrate": "node scripts/migrate-user-id.js",
-    "migration:run": "node scripts/run-migrations.js"
+    "migration:run": "node scripts/run-migrations.js",
+    "test:recovery": "node scripts/test-recovery-codes.js",
+    "test:unit": "node --test __tests__/RecoveryCodeService.test.js",
+    "test:api": "node --test __tests__/RecoveryCodeAPI.test.js",
+    "test:integration": "node --test __tests__/RecoveryCodeFlow.test.js",
+    "test:all-recovery": "node __tests__/run-all-tests.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.956.0",

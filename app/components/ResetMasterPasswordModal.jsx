@@ -1,13 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function ResetMasterPasswordModal({ isOpen, onClose, onResetComplete }) {
   const [loginPassword, setLoginPassword] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
   const [newMasterPassword, setNewMasterPassword] = useState('');
   const [confirmMasterPassword, setConfirmMasterPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [hasRecoveryCodes, setHasRecoveryCodes] = useState(false);
+  const [checkingCodes, setCheckingCodes] = useState(true);
+
+  useEffect(() => {
+    if (isOpen) {
+      checkRecoveryCodes();
+    }
+  }, [isOpen]);
+
+  const checkRecoveryCodes = async () => {
+    try {
+      const response = await fetch('/api/auth/recovery-codes');
+      if (response.ok) {
+        const data = await response.json();
+        setHasRecoveryCodes(data.enabled && data.codesRemaining > 0);
+      }
+    } catch (err) {
+      console.error('Error checking recovery codes:', err);
+    } finally {
+      setCheckingCodes(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -23,15 +46,28 @@ export default function ResetMasterPasswordModal({ isOpen, onClose, onResetCompl
       return;
     }
 
+    if (!recoveryCode) {
+      setError('Recovery code is required');
+      return;
+    }
+
+    if (!loginPassword) {
+      setError('Login password is required');
+      return;
+    }
+
     setLoading(true);
     try {
-      const response = await fetch('/api/auth/reset-master', {
+      const body = {
+        loginPassword,
+        recoveryCode,
+        newMasterPassword
+      };
+
+      const response = await fetch('/api/auth/reset-master-with-recovery', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          loginPassword,
-          newMasterPassword
-        })
+        body: JSON.stringify(body)
       });
 
       const data = await response.json();
@@ -73,19 +109,51 @@ export default function ResetMasterPasswordModal({ isOpen, onClose, onResetCompl
             </p>
           </div>
 
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">
-              Confirm Login Password
-            </label>
-            <input
-              type="password"
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-              placeholder="Enter your regular account password"
-              className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 outline-none"
-              required
-            />
-          </div>
+          {!hasRecoveryCodes && !checkingCodes && (
+            <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-xl">
+              <p className="text-sm text-yellow-800 font-medium">
+                ⚠️ <strong>No Recovery Codes:</strong> You don't have any active recovery codes. You must generate recovery codes first in Settings → Security before you can reset your master password.
+              </p>
+            </div>
+          )}
+
+          {/* Recovery Code Section */}
+          {hasRecoveryCodes && !checkingCodes && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  Recovery Code
+                </label>
+                <input
+                  type="text"
+                  value={recoveryCode}
+                  onChange={(e) => setRecoveryCode(e.target.value.toUpperCase())}
+                  placeholder="XXXX-XXXX-XXXX-XXXX"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+                  required
+                />
+                <p className="text-xs text-gray-600 mt-1">
+                  Enter one of your recovery codes
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  Confirm Login Password
+                </label>
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="Enter your regular account password"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  required
+                />
+                <p className="text-xs text-gray-600 mt-1">
+                  For identity verification
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="h-px bg-gray-100 my-2"></div>
 
@@ -133,8 +201,8 @@ export default function ResetMasterPasswordModal({ isOpen, onClose, onResetCompl
             </button>
             <button
               type="submit"
-              disabled={loading}
-              className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-500/20 disabled:opacity-50"
+              disabled={loading || !hasRecoveryCodes || checkingCodes}
+              className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Processing...' : 'Reset Key'}
             </button>

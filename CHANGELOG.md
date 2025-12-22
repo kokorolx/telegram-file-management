@@ -2,6 +2,58 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2025-12-22] - Phase 8: Feature Flag Infrastructure for Recovery Codes
+
+### Added
+- **Feature Flag System** - Centralized control for recovery codes feature with environment variable configuration
+- **Feature Flag Functions** - `isRecoveryCodesEnabled()`, `isRecoveryCodesBeta()`, `getRecoveryCodesRolloutPercent()`, `isRecoveryCodesEnabledForUser()`
+- **Beta Mode Support** - Percentage-based rollout (0-100%) for gradual feature enablement
+- **Hash-Based User Assignment** - Deterministic, consistent user bucketing for reproducible rollout across deployments
+- **API Endpoint Guards** - All 4 recovery code endpoints return 404 when feature flag disabled
+- **Component Guards** - All 3 recovery code UI components return null when feature flag disabled
+- **Feature Flag Tests** - 40 comprehensive tests covering all flag states and edge cases (100% passing)
+- **Rollout Documentation** - Complete Phase 8 and Phase 9 planning documentation
+
+### Technical Details
+- New file: `lib/featureFlags.js` - Core feature flag infrastructure
+- Environment variables: `FEATURE_RECOVERY_CODES_ENABLED`, `FEATURE_RECOVERY_CODES_BETA`, `FEATURE_RECOVERY_CODES_ROLLOUT_PERCENT`
+- Feature flag checks happen before any business logic in API endpoints
+- UI components check flag at render time
+- Hash function uses 32-bit integer arithmetic for deterministic bucketing
+- Same user always gets same assignment across deployments
+
+### Files Modified
+- `app/api/auth/recovery-codes/generate/route.js` - Added feature flag check
+- `app/api/auth/recovery-codes/route.js` - Added feature flag check
+- `app/api/auth/reset-master-with-recovery/route.js` - Added feature flag check
+- `app/api/auth/recovery-codes/revoke/route.js` - Added feature flag check
+- `app/components/RecoveryCodeModal.jsx` - Added feature flag check
+- `app/components/RecoveryCodeSettings.jsx` - Added feature flag check
+- `app/components/RecoveryCodeWarningBanner.jsx` - Added feature flag check
+
+### Tests
+- `__tests__/FeatureFlagTests.test.js` - 40 new tests covering:
+  - Flag disabled/enabled states
+  - Beta mode percentage rollout
+  - Rollout percentage clamping
+  - Hash-based user consistency
+  - Flag override behavior
+  - Edge cases (empty ID, long ID, special characters)
+  - Rollout progression timeline
+
+### Test Results
+- Feature Flag tests: 40/40 passing ✅
+- Total tests: 119/119 passing ✅
+- Build: Zero errors ✅
+
+### Next Steps (Phase 9)
+- Deploy to staging with feature flag disabled (baseline)
+- Deploy to production with feature flag disabled
+- Enable beta mode at 10% rollout
+- Monitor metrics and expand to 50%, then 100%
+
+---
+
 ## [2025-12-22] - Two-Layer Encryption for Personal S3 Credentials
 
 ### Added

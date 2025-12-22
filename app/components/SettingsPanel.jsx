@@ -1,12 +1,15 @@
 import { useState } from 'react';
+import { useUser } from '../contexts/UserContext';
 import Dashboard from './Dashboard';
 import BotManager from './BotManager';
 import ResetMasterPasswordModal from './ResetMasterPasswordModal';
+import RecoveryCodeSettings from './RecoveryCodeSettings';
 import { config } from '@/lib/config';
 
 export default function SettingsPanel({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showResetModal, setShowResetModal] = useState(false);
+  const { user } = useUser();
 
   if (!isOpen) return null;
 
@@ -125,6 +128,12 @@ export default function SettingsPanel({ isOpen, onClose }) {
             {activeTab === 'bots' && <BotManager />}
             {activeTab === 'security' && (
               <div className="space-y-6 animate-fade-in">
+                {/* Recovery Codes Section */}
+                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
+                  <RecoveryCodeSettings />
+                </div>
+
+                {/* Master Password Section */}
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
                   <h3 className="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
                     <span>🗝️</span> Master Password
@@ -136,7 +145,7 @@ export default function SettingsPanel({ isOpen, onClose }) {
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
                     <div className="text-sm">
                       <p className="font-bold text-slate-900">Security Reset</p>
-                      <p className="text-slate-500">Reset master password using account login</p>
+                      <p className="text-slate-500">Reset master password using account login or recovery code</p>
                     </div>
                     <button
                       onClick={() => setShowResetModal(true)}

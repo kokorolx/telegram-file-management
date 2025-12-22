@@ -9,6 +9,7 @@ import FolderNav from '../components/FolderNav';
 import Breadcrumb from '../components/Breadcrumb';
 import CreateFolderDialog from '../components/CreateFolderDialog';
 import DropZone from '../components/DropZone';
+import RecoveryCodeSetupModal from '../components/RecoveryCodeSetupModal';
 
 import LoginDialog from '../components/LoginDialog';
 import EnhancedContextMenu from '../components/EnhancedContextMenu';
@@ -59,6 +60,7 @@ export default function Home({ params: paramsPromise }) {
   const [showLogin, setShowLogin] = useState(false);
   const [viewMode, setViewMode] = useState('grid');
   const [healthStatus, setHealthStatus] = useState(null);
+  const [showRecoveryCodeSetup, setShowRecoveryCodeSetup] = useState(false);
 
   // Multi-select state
   const { selectedItems, selectedFolders, toggleFile, toggleFolder, clearSelection, hasSelection, selectionCount } = useMultiSelect();
@@ -273,6 +275,8 @@ export default function Home({ params: paramsPromise }) {
   };
 
   const handleSetupComplete = () => {
+    // Show recovery code setup modal after master password is set
+    setShowRecoveryCodeSetup(true);
     setRefreshTrigger(prev => prev + 1);
   };
 
@@ -471,6 +475,10 @@ export default function Home({ params: paramsPromise }) {
       <SetupModal
         onSetupComplete={handleSetupComplete}
         refreshTrigger={refreshTrigger}
+      />
+      <RecoveryCodeSetupModal
+        isOpen={showRecoveryCodeSetup}
+        onClose={() => setShowRecoveryCodeSetup(false)}
       />
       <CreateFolderDialog
         isOpen={showCreateFolder}

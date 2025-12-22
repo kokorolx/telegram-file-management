@@ -6,6 +6,8 @@ import Dashboard from '../../components/Dashboard';
 import BotManager from '../../components/BotManager';
 import ResetMasterPasswordModal from '../../components/ResetMasterPasswordModal';
 import S3BackupModal from '../../components/S3BackupModal';
+import RecoveryCodeSettings from '../../components/RecoveryCodeSettings';
+import RecoveryCodeWarningBanner from '../../components/RecoveryCodeWarningBanner';
 import { config } from '@/lib/config';
 
 const TABS = [
@@ -97,6 +99,8 @@ export default function SettingsPage({ params }) {
           )}
           {activeTab.id === 'security' && (
             <div className="space-y-6">
+              <RecoveryCodeWarningBanner onGenerateClick={() => {}} />
+              
               <div className="bg-slate-700/50 rounded-xl p-6">
                 <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
                   <span>🗝️</span> Master Password
@@ -111,6 +115,9 @@ export default function SettingsPage({ params }) {
                   Reset Master Password
                 </button>
               </div>
+              
+              <RecoveryCodeSettings />
+              
               <div className="p-4 bg-blue-900/20 rounded-xl border border-blue-600/30">
                 <p className="text-blue-200 text-sm">
                   ℹ️ We use AES-256-GCM encryption. The master password is used to derive your encryption key locally in your browser. Our servers only store a salted hash for verification.
