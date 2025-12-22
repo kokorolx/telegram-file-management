@@ -62,15 +62,16 @@ export async function POST(request) {
         );
     }
 
-    // 1. Save global settings
+    // 1. Mark setup as complete (singleton setting with id=1)
     await settingRepository.saveSettings(finalBotToken, finalUserId);
 
-    // 2. Setup Master Password
+    // 2. Setup Master Password (user-specific)
     const encryptionSalt = randomBytes(16).toString('hex');
     const hash = await authService.generateMasterPasswordHash(masterPassword);
     await userRepository.updateMasterPassword(user.id, hash, encryptionSalt);
 
-    // 3. Save primary bot to user (encrypted)
+    // 3. Save primary bot to user (encrypted, per-user storage)
+    // Note: Bot tokens are stored per-user in user_bots table, not in global settings
     await userBotRepository.saveBot(user.id, {
         name: 'Primary Bot',
         botToken: authService.encryptSystemData(finalBotToken),
@@ -131,7 +132,7 @@ export async function GET(request) {
 export async function PUT(request) {
   try {
     const body = await request.json();
-    const { masterPassword, setupToken, botToken, userId: tgUserId } = body;
+    const { masterPassword, setupToken, botToken, userId: tgUserId, email } = body;
 
     const user = getUserFromRequest(request);
     if (!user || !user.id) {
@@ -139,11 +140,19 @@ export async function PUT(request) {
     }
 
     const userRecord = await userRepository.findById(user.id);
+
+    // Update email if provided
+    if (email !== undefined) {
+        await userRepository.update(user.id, { email });
+    }
+
     const hasExistingMaster = !!userRecord?.master_password_hash;
 
-    if (hasExistingMaster && setupToken !== SETUP_TOKEN) {
+    // Setup token only required for bot configuration, not for master password
+    // Authenticated users can change their own master password without setup token
+    if (!useDefault && setupToken !== SETUP_TOKEN) {
       return NextResponse.json(
-        { success: false, error: 'Setup token is required to update an existing master password' },
+        { success: false, error: 'Invalid setup token for bot configuration' },
         { status: 401 }
       );
     }

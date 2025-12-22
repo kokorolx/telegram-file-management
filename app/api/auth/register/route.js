@@ -3,7 +3,7 @@ import { authService } from '@/lib/authService';
 
 export async function POST(request) {
   try {
-    const { username, password } = await request.json();
+    const { username, password, email } = await request.json();
 
     if (!username || !password) {
       return NextResponse.json(
@@ -16,7 +16,7 @@ export async function POST(request) {
         return NextResponse.json({ success: false, error: 'Password must be at least 6 characters' }, { status: 400 });
     }
 
-    const user = await authService.register(username, password);
+    const user = await authService.register(username, password, email);
 
     return NextResponse.json({
       success: true,

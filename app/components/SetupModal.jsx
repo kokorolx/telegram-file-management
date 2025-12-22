@@ -33,9 +33,9 @@ export default function SetupModal({ onSetupComplete, refreshTrigger }) {
       setHasMasterPassword(hasMP);
 
       // Only show modal if:
-      // 1. Global setup is incomplete
-      // 2. OR (Global setup complete AND user is logged in AND user has no master password set)
-      const shouldShow = !setupComp || (setupComp && user && !hasMP);
+      // 1. User is logged in AND has no master password set
+      // (Global setup is already complete via environment variables)
+      const shouldShow = user && !hasMP;
       setShowModal(shouldShow);
     } catch (err) {
       console.error('Error checking setup:', err);
@@ -126,13 +126,11 @@ export default function SetupModal({ onSetupComplete, refreshTrigger }) {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full mx-4">
         <h2 className="text-2xl font-bold text-gray-900 mb-2">
-          {setupComplete ? '🔒 Secure Your Vault' : '🚀 Initial Setup Required'}
+          🔒 Secure Your Vault
         </h2>
-         <p className="text-gray-600 mb-6">
-           {setupComplete
-             ? 'Welcome! To start using your secure storage, you must first set a master password.'
-             : 'Configure your Telegram bot and set a master password to encrypt your vault.'}
-         </p>
+        <p className="text-gray-600 mb-6">
+          Welcome! To start using your secure storage, set a master password to encrypt your files.
+        </p>
 
         <form onSubmit={handleSetup} className="space-y-4">
           {error && (
@@ -141,74 +139,8 @@ export default function SetupModal({ onSetupComplete, refreshTrigger }) {
             </div>
           )}
 
-          {/* Bot Token and User ID inputs are disabled for now - using default config */}
-          {/* TODO: Re-enable these fields in future if needed */}
-
-          {!setupComplete && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Setup Token
-                </label>
-                <input
-                  type="password"
-                  value={setupToken}
-                  onChange={(e) => setSetupToken(e.target.value)}
-                  placeholder="Setup token from environment"
-                  disabled={loading}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 disabled:bg-gray-100"
-                  required
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Check .env.local for SETUP_TOKEN
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between py-2">
-                 <span className="text-sm font-medium text-gray-700">Custom Telegram Bot?</span>
-                 <button
-                   type="button"
-                   onClick={() => setUseDefault(!useDefault)}
-                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${useDefault ? 'bg-gray-200' : 'bg-blue-600'}`}
-                 >
-                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useDefault ? 'translate-x-1' : 'translate-x-6'}`} />
-                 </button>
-              </div>
-
-              {!useDefault && (
-                <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-100 animate-in fade-in slide-in-from-top-2">
-                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                      Telegram Bot Token
-                    </label>
-                    <input
-                      type="password"
-                      value={botToken}
-                      onChange={(e) => setBotToken(e.target.value)}
-                      placeholder="123456:ABC-DEF..."
-                      disabled={loading}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-blue-500"
-                      required={!useDefault}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                      Telegram User ID
-                    </label>
-                    <input
-                      type="text"
-                      value={userId}
-                      onChange={(e) => setUserId(e.target.value)}
-                      placeholder="Your numerical ID"
-                      disabled={loading}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-blue-500"
-                      required={!useDefault}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {/* Bot configuration is handled via environment variables */}
+          {/* No need to show bot setup fields when system is already configured */}
 
           {/* If setup is complete but user wants to update their personal bot config */}
           {setupComplete && !hasMasterPassword && (
@@ -352,7 +284,7 @@ export default function SetupModal({ onSetupComplete, refreshTrigger }) {
 
           <button
             type="submit"
-            disabled={loading || !masterPassword || masterPassword !== confirmPassword || (!setupComplete && !setupToken && !useDefault) }
+            disabled={loading || !masterPassword || masterPassword !== confirmPassword}
             className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition shadow-lg shadow-blue-500/20 active:scale-[0.98]"
           >
             {loading ? (
@@ -363,7 +295,7 @@ export default function SetupModal({ onSetupComplete, refreshTrigger }) {
                     </svg>
                     Processing...
                 </span>
-            ) : (setupComplete ? 'Secure Vault' : 'Complete Setup')}
+            ) : 'Secure Vault'}
           </button>
         </form>
 

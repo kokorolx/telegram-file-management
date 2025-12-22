@@ -94,3 +94,6 @@
 - **Session cookie encoding**: `session_user` is base64-encoded JSON. Always decode with `Buffer.from(..., 'base64').toString('utf-8')`.
 - **Chunk reassembly**: Chunks must be reassembled in `part_number` order. Sort by `part_number ASC` when fetching from DB.
 - **IV/AuthTag format**: Stored as hex strings in DB, must convert to `Uint8Array` for Web Crypto API.
+
+
+ALWAY run build and fix before complete task.

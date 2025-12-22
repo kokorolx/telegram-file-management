@@ -5,6 +5,7 @@ import BotManager from './BotManager';
 import ResetMasterPasswordModal from './ResetMasterPasswordModal';
 import RecoveryCodeSettings from './RecoveryCodeSettings';
 import { config } from '@/lib/config';
+import { isEmailCollectionEnabled } from '@/lib/featureFlags';
 
 export default function SettingsPanel({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -76,6 +77,16 @@ export default function SettingsPanel({ isOpen, onClose }) {
                 🏢 Enterprise
               </button>
             )}
+            <button
+              onClick={() => setActiveTab('profile')}
+              className={`flex-1 px-4 py-3 font-medium transition-colors text-center ${
+                activeTab === 'profile'
+                  ? 'border-b-2 border-blue-600 text-blue-600 bg-white'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              👤 Profile
+            </button>
           </div>
 
           {/* Content */}
@@ -126,8 +137,29 @@ export default function SettingsPanel({ isOpen, onClose }) {
             )}
             {activeTab === 'dashboard' && <Dashboard />}
             {activeTab === 'bots' && <BotManager />}
+            {activeTab === 'profile' && (
+                <div className="space-y-6 animate-fade-in">
+                    <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                        <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                           <span>👤</span> Your Profile
+                        </h3>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                                <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 font-medium">
+                                    {user?.username || 'Unknown'}
+                                </div>
+                                <p className="text-xs text-gray-400 mt-1 pl-1">Username cannot be changed.</p>
+                            </div>
+
+                            {isEmailCollectionEnabled() && <ProfileEmailForm user={user} />}
+                        </div>
+                    </div>
+                </div>
+            )}
             {activeTab === 'security' && (
-              <div className="space-y-6 animate-fade-in">
+                <div className="space-y-6 animate-fade-in">
                 {/* Recovery Codes Section */}
                 <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
                   <RecoveryCodeSettings />
@@ -178,4 +210,75 @@ export default function SettingsPanel({ isOpen, onClose }) {
       />
     </>
   );
+}
+
+function ProfileEmailForm({ user }) {
+    const [email, setEmail] = useState(user?.email || '');
+    const [loading, setLoading] = useState(false);
+    const [message, setMessage] = useState(null);
+
+    // Update local state when user prop changes (e.g. initial load)
+    useEffect(() => {
+        if (user?.email) setEmail(user.email);
+    }, [user?.email]);
+
+    async function handleSave(e) {
+        e.preventDefault();
+        setLoading(true);
+        setMessage(null);
+
+        try {
+            const res = await fetch('/api/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || 'Failed to update email');
+
+            setMessage({ type: 'success', text: 'Email updated successfully!' });
+        } catch (err) {
+            setMessage({ type: 'error', text: err.message });
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    return (
+        <form onSubmit={handleSave} className="pt-2 border-t border-gray-100 mt-2">
+             <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address <span className="text-gray-400 font-normal">(Optional)</span></label>
+                <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">📧</span>
+                    <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="Enter your email"
+                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                    />
+                </div>
+                <p className="text-xs text-blue-600 mt-1.5 flex items-center gap-1">
+                    <span>ℹ️</span> This email will be used for password recovery.
+                </p>
+            </div>
+
+            {message && (
+                <div className={`p-3 rounded-lg text-sm mb-4 flex items-center gap-2 ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                    <span>{message.type === 'success' ? '✅' : '⚠️'}</span>
+                    {message.text}
+                </div>
+            )}
+
+            <button
+                type="submit"
+                disabled={loading}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            >
+                {loading ? 'Saving...' : 'Save Email'}
+            </button>
+        </form>
+    );
 }

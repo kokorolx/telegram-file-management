@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { isEmailCollectionEnabled } from '@/lib/featureFlags';
 
 export default function LoginDialog({ isOpen, onLoginSuccess }) {
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -18,7 +20,7 @@ export default function LoginDialog({ isOpen, onLoginSuccess }) {
       const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
 
       const payload = isRegister
-        ? { username, password }
+        ? { username, password, email }
         : (username ? { username, password } : { password }); // Support legacy master password login (no username)
 
       const res = await fetch(endpoint, {
@@ -114,6 +116,22 @@ export default function LoginDialog({ isOpen, onLoginSuccess }) {
                               value={username}
                               onChange={(e) => setUsername(e.target.value)}
                               required={isRegister}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {isRegister && isEmailCollectionEnabled() && (
+                    <div className="space-y-1.5 animate-fade-in">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wide ml-1">Email <span className="text-gray-400 font-normal normal-case">(Optional)</span></label>
+                        <div className="relative group">
+                            <span className="absolute left-4 top-3.5 text-gray-400 group-focus-within:text-blue-500 transition-colors">📧</span>
+                            <input
+                              type="email"
+                              className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-gray-700 font-medium placeholder-gray-400"
+                              placeholder="For password reset"
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
                             />
                         </div>
                     </div>
