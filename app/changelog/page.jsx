@@ -5,6 +5,11 @@ import Link from 'next/link';
 import PublicHeader from '../components/PublicHeader';
 import PublicFooter from '../components/PublicFooter';
 
+export const metadata = {
+  title: 'Changelog',
+  description: 'Stay updated with the latest improvements, security patches, and features added to Telegram Vault.',
+};
+
 // Helper to parse markdown content into structured data
 function parseChangelog(content) {
   const lines = content.split('\n');

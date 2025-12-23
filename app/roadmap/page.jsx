@@ -6,6 +6,11 @@ import PublicHeader from '../components/PublicHeader';
 import PublicFooter from '../components/PublicFooter';
 import FeedbackForm from '../components/FeedbackForm';
 
+export const metadata = {
+  title: 'Product Roadmap',
+  description: 'See the future of Telegram Vault. Track upcoming features like secure collaboration, advanced file previews, and enterprise-grade security.',
+};
+
 // Helper to parse roadmap content from PUBLIC_CHANGELOG.md
 function parseRoadmap(content) {
   const lines = content.split('\n');

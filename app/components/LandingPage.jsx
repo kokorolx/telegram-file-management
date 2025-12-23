@@ -16,6 +16,38 @@ export default function LandingPage({ onLaunch }) {
 
   return (
     <div className="min-h-screen bg-[#050505] text-white selection:bg-blue-500/30 w-full overflow-x-hidden">
+      {/* Structured Data (JSON-LD) for SEO & AI Crawlers */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'SoftwareApplication',
+            'name': 'Telegram Vault',
+            'operatingSystem': 'Web',
+            'applicationCategory': 'SecurityApplication, StorageApplication',
+            'description': 'Ultra-secure, decentralized file storage using Telegram infrastructure and local encryption keys. Zero-knowledge by design.',
+            'offers': {
+              '@type': 'Offer',
+              'price': '0',
+              'priceCurrency': 'USD',
+            },
+            'featureList': [
+              'Zero-Knowledge Encryption',
+              'Unlimited Telegram Storage',
+              'Browser-Side Decryption',
+              'Secure Sharing',
+              'Video Streaming',
+            ],
+            'author': {
+              '@type': 'Organization',
+              'name': 'Telegram Vault',
+              'url': 'https://tg-vault.com',
+            },
+          }),
+        }}
+      />
+
       {/* Decorative Background Elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[120px] animate-pulse"></div>
