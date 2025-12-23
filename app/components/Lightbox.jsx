@@ -111,7 +111,7 @@ export default function FileLightbox({
           setLoading(false);
           return;
         }
-        
+
         // Use getCachedOrDecrypt to prevent concurrent fetches
         const entry = await getCachedOrDecrypt(file.id, async () => {
           const parts = initialParts || await fetchFilePartMetadata(file.id, shareToken);
@@ -124,7 +124,7 @@ export default function FileLightbox({
           const finalBlob = new Blob([blob], { type: mimeType });
           return URL.createObjectURL(finalBlob);
         });
-        
+
         url = entry.url;
       } else {
         url = `/api/download?file_id=${file.id}`;
@@ -233,13 +233,13 @@ export default function FileLightbox({
       {/* Unlock UI (Ported from PreviewModal) */}
       {file?.is_encrypted && !isUnlocked && !loading && (
         <div className="fixed inset-0 z-[99999] bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-white p-8 rounded-2xl shadow-2xl text-center max-w-sm w-full animate-fade-in">
+          <div className="bg-gray-900 p-8 rounded-2xl shadow-2xl text-center max-w-sm w-full animate-fade-in border border-gray-800">
             <div className="text-6xl mb-6">🔒</div>
-            <h3 className="text-xl font-bold mb-3 text-gray-900">Unlock Vault</h3>
-            <p className="text-gray-500 mb-6 font-medium text-sm">
+            <h3 className="text-xl font-bold mb-3 text-white">Unlock Vault</h3>
+            <p className="text-gray-400 mb-6 font-medium text-sm">
               Please enter your <strong>Current Master Password</strong> to unlock the vault.
               <br/><br/>
-              <span className="text-xs opacity-80">
+              <span className="text-xs opacity-60">
                 (If this file uses a legacy password, you will be prompted for it after unlocking)
               </span>
             </p>
@@ -248,16 +248,16 @@ export default function FileLightbox({
                 type="password"
                 value={inputPassword}
                 onChange={e => setInputPassword(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all shadow-sm"
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all shadow-sm placeholder-gray-500"
                 placeholder="Master Password"
                 autoFocus
               />
-              {error && <p className="text-red-500 text-sm font-medium">{error}</p>}
+              {error && <p className="text-red-400 text-sm font-medium">{error}</p>}
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-colors"
+                  className="flex-1 px-4 py-3 bg-gray-800 text-gray-300 rounded-xl font-bold hover:bg-gray-700 transition-colors border border-gray-700"
                 >
                   Cancel
                 </button>

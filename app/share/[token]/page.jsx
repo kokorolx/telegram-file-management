@@ -122,6 +122,28 @@ export default function GuestSharePage() {
         );
     }
 
+    const handleDownload = async () => {
+        if (!file || !decryptedKey) return;
+
+        try {
+            setLoading(true);
+            const blob = await fetchAndDecryptFullFile(file, decryptedKey, parts, token, true);
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.original_filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (err) {
+            console.error('Download failed:', err);
+            alert('Failed to download file. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-white">
@@ -175,13 +197,21 @@ export default function GuestSharePage() {
                                 </p>
                             </div>
 
-                            <button
-                                onClick={() => setShowLightbox(true)}
-                                className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-2xl hover:bg-indigo-700 transition-all shadow-2xl shadow-indigo-500/30 active:scale-[0.98] group"
-                            >
-                                <span className="group-hover:mr-2 transition-all">Preview & Download</span>
-                                <span className="inline-block transition-transform group-hover:translate-x-1">🚀</span>
-                            </button>
+                            <div className="flex gap-4">
+                                <button
+                                    onClick={() => setShowLightbox(true)}
+                                    className="flex-1 bg-white text-blue-600 border-2 border-blue-100 py-4 rounded-2xl font-bold text-lg hover:bg-blue-50 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                >
+                                    <span>👁️</span> Preview
+                                </button>
+                                <button
+                                    onClick={handleDownload}
+                                    disabled={loading}
+                                    className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <span>{loading ? '⏳' : '⬇️'}</span> {loading ? 'Downloading...' : 'Download'}
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
