@@ -21,8 +21,8 @@ export default function PublicHeader({ activePage = 'home' }) {
     <nav className="fixed top-0 w-full bg-black/40 backdrop-blur-xl border-b border-white/5 z-50">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
         <Link href="/landing" className="flex items-center gap-3 group">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform">
-            <span className="text-xl">🔒</span>
+          <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/20">
+            <img src="/logo.png" alt="Telegram Vault" className="w-full h-full object-cover" />
           </div>
           <div className="flex flex-col">
             <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">Telegram Vault</h1>

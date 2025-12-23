@@ -8,8 +8,8 @@ export default function PublicFooter() {
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-10">
         <div className="flex flex-col items-center md:items-start gap-4">
           <Link href="/landing" className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center">
-              <span className="text-sm">🔒</span>
+            <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center">
+              <img src="/logo.png" alt="Telegram Vault" className="w-full h-full object-cover" />
             </div>
             <span className="font-bold text-lg tracking-tight text-white">Telegram Vault</span>
           </Link>

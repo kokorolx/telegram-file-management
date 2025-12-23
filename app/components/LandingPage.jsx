@@ -184,7 +184,9 @@ export default function LandingPage({ onLaunch }) {
                         <div className="flex justify-between"><span>TLS-1.3</span> <span className="text-emerald-500">SECURE</span></div>
                      </div>
                      <div className="text-center py-6">
-                        <span className="text-5xl">🔐</span>
+                        <div className="w-16 h-16 mx-auto rounded-2xl overflow-hidden mb-4 shadow-2xl shadow-blue-500/20">
+                           <img src="/logo.png" alt="Vault Icon" className="w-full h-full object-cover" />
+                        </div>
                         <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mt-4">Zero Knowledge State</p>
                      </div>
                   </div>
