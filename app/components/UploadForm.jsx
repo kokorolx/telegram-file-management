@@ -186,13 +186,27 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
 
      // MP4 Fragmentation (if enabled for MP4/MOV videos)
      const isMP4Video = (fileItem.file.type === 'video/mp4' || fileItem.file.type === 'video/quicktime' || fileItem.file.name.toLowerCase().endsWith('.mp4') || fileItem.file.name.toLowerCase().endsWith('.mov'));
+     
+     // Size limit: Skip fragmentation for files > 200MB to avoid WASM OOM
+     const MAX_FRAGMENTATION_SIZE = 200 * 1024 * 1024; // 200MB
+     const isFileTooLarge = isMP4Video && fileItem.file.size > MAX_FRAGMENTATION_SIZE;
+     
+     // Alert user about large video files
+     if (isFileTooLarge) {
+       const sizeMB = (fileItem.file.size / (1024 * 1024)).toFixed(1);
+       alert(`⚠️ Large video file detected (${sizeMB} MB)\n\nYour video is larger than 200 MB. Progressive streaming is disabled for this file.\n\nThe entire file will be downloaded before playback begins. This is necessary to avoid browser memory issues.\n\nConsider uploading smaller video files for a better experience.`);
+       console.warn(`[Upload] File ${fileItem.file.name} (${sizeMB} MB) exceeds 200MB limit. Fragmentation skipped.`);
+     }
+     
      // CRITICAL: Check browser support (SharedArrayBuffer) before attempting
-     const shouldFragment = isFragmentationActive && isMP4Video && isFragmentationSupported();
+     const shouldFragment = isFragmentationActive && isMP4Video && isFragmentationSupported() && !isFileTooLarge;
 
      console.log(`[Upload] Fragmentation decision for ${fileItem.file.name}:`, {
        shouldFragment,
        isFragmentationActive,
        isMP4Video,
+       isFileTooLarge,
+       fileSize: fileItem.file.size,
        isSupported: isFragmentationSupported()
      });
 

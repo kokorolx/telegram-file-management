@@ -63,13 +63,16 @@ export async function POST(request) {
 
     const encryptedBuffer = Buffer.from(encrypted_data, 'base64');
     const chunkFilename = `${original_filename}_part_${part_number}`;
+    
+    // Debug: Log chunk sizes
+    console.log(`[UPLOAD] Part ${part_number}: base64 input ${encrypted_data.length} chars -> buffer ${encryptedBuffer.length} bytes`);
 
-    // Step 1: Upload encrypted chunk to Telegram (primary storage)
+    // Step 1: Upload encrypted chunk to primary storage (Telegram, S3, or LOCAL)
     let storageId;
     try {
       storageId = await storageProvider.uploadChunk(userId, encryptedBuffer, chunkFilename);
     } catch (err) {
-      console.error(`Failed to upload chunk ${part_number} to Telegram:`, err);
+      console.error(`Failed to upload chunk ${part_number} to primary storage:`, err);
       return NextResponse.json({ error: `Storage upload failed: ${err.message}` }, { status: 500 });
     }
 

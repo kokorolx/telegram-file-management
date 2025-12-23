@@ -87,6 +87,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
                 authTag
               );
 
+              console.log(`[VideoPlayer] Chunk ${chunkNum} decrypted: ${encryptedBuffer.length} bytes encrypted -> ${decrypted.length} bytes decrypted`);
               return { decrypted, total: partsRef.current.length };
           } finally {
               if (fetchingRef.current.get(chunkNum) === fetchPromise) {
@@ -322,9 +323,19 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
             try {
                 await appendToSourceBuffer(sourceBuffer, decrypted);
             } catch (err) {
-                 // Specific Error Handling for Audio Mismatch (common with screen recordings)
-                 if (err.message && (err.message.includes('aac track') || err.message.includes('audio track') || err.message.includes('Initialization segment misses expected') || err.message.includes('CHUNK_DEMUXER'))) {
-                     console.warn('[VideoPlayer] Audio track mismatch detected. Retrying with video-only codec...');
+                 // Specific Error Handling for Audio/Codec Mismatch or Demuxer Errors
+                 // These are common with screen recordings and fragmented/re-encoded video
+                 const isMediaError = err.message && (
+                   err.message.includes('aac track') || 
+                   err.message.includes('audio track') || 
+                   err.message.includes('Initialization segment misses expected') || 
+                   err.message.includes('CHUNK_DEMUXER') ||
+                   err.message.includes('Failed to prepare') ||
+                   err.message.includes('codec')
+                 );
+
+                 if (isMediaError) {
+                     console.warn('[VideoPlayer] MediaSource append error detected. Attempting recovery with video-only codec...');
 
                      // Clean up bad buffer - wait for state to settle
                      if (sourceBuffer.updating) {
@@ -340,11 +351,15 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
                      const videoOnlyCodec = supportedCodec.replace(/, mp4a\.40\.2/g, '').replace(/, opus/g, '').replace(/, vorbis/g, '');
                      console.log(`[VideoPlayer] Switching to video-only codec: ${videoOnlyCodec}`);
 
-                     sourceBuffer = mediaSource.addSourceBuffer(videoOnlyCodec);
-                     sourceBufferRef.current = sourceBuffer;
-
-                     await appendToSourceBuffer(sourceBuffer, decrypted);
-                     console.log('[VideoPlayer] Successfully recovered with video-only codec');
+                     try {
+                       sourceBuffer = mediaSource.addSourceBuffer(videoOnlyCodec);
+                       sourceBufferRef.current = sourceBuffer;
+                       await appendToSourceBuffer(sourceBuffer, decrypted);
+                       console.log('[VideoPlayer] Successfully recovered with video-only codec');
+                     } catch (retryErr) {
+                       console.warn('[VideoPlayer] Video-only codec recovery failed, falling back to full-download:', retryErr.message);
+                       throw new Error('MediaSource recovery failed, falling back to full-download');
+                     }
                  } else {
                      throw err; // Re-throw other errors
                  }

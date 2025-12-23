@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { fileService } from '@/lib/fileService';
 import { getFileDownloadUrl } from '@/lib/telegram';
 import { requireAuth } from '@/lib/auth';
+import { storageProvider } from '@/lib/storage';
 
 // export const dynamic = 'force-dynamic'; // Removed to allow caching
 
@@ -90,29 +91,49 @@ export async function GET(request, { params }) {
       );
     }
 
-    // Fetch encrypted blob from Telegram
-    let telegramResponse;
+    // Fetch encrypted blob using storage provider abstraction
+    const { config } = await import('@/lib/config');
+    let encryptedBuffer;
     const errors = [];
+    const userId = authorizedUserId || file.user_id;
 
+    // Step 1: Try primary storage backend (Telegram, S3, or LOCAL)
     try {
-      const dlUrl = await getFileDownloadUrl(authorizedUserId || file.user_id, part.telegram_file_id);
-      telegramResponse = await fetch(dlUrl);
+      let storageId = part.telegram_file_id; // Default to Telegram ID for backward compat
+      
+      // For LOCAL storage, use the local storage ID format
+      const { config: storageConfig } = await import('@/lib/config');
+      
+      // Special handling for LOCAL storage - read file directly instead of fetch
+      if (storageConfig.storageBackend === 'LOCAL') {
+        if (part.telegram_file_id?.startsWith('local:')) {
+          storageId = part.telegram_file_id;
+        }
+        
+        // Import LocalStorageProvider and read directly
+          const { LocalStorageProvider } = await import('@/lib/storage/LocalStorageProvider');
+          const localProvider = new LocalStorageProvider();
+          encryptedBuffer = await localProvider.getFile(storageId);
+          console.log(`[CHUNK] Retrieved from LOCAL: ${storageId} -> ${encryptedBuffer.length} bytes`);
+      } else {
+        // For other backends, fetch via URL
+        const dlUrl = await storageProvider.getDownloadUrl(userId, storageId);
+        const response = await fetch(dlUrl);
 
-      if (!telegramResponse.ok) {
-        throw new Error(`HTTP ${telegramResponse.status}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} from ${storageConfig.storageBackend}`);
+        }
+
+        encryptedBuffer = Buffer.from(await response.arrayBuffer());
       }
     } catch (err) {
-      console.warn(`[CHUNK] Failed to fetch part ${partNumber} from Telegram:`, err.message);
-      errors.push(`Telegram: ${err.message}`);
+      console.warn(`[CHUNK] Failed to fetch part ${partNumber} from primary storage:`, err.message);
+      errors.push(`Primary Storage: ${err.message}`);
 
-      // Fallback to S3
+      // Step 2: Try backup storage (S3)
       if (part.backup_storage_id) {
         try {
-          // Dynamic import to avoid circular deps or server-only issues if any
           const { S3StorageProvider } = await import('@/lib/storage/S3StorageProvider');
-          const { config } = await import('@/lib/config');
-          // rsaKeyManager already initialized at top of handler
-
           const s3Provider = new S3StorageProvider();
           let s3Config = null;
 
@@ -121,7 +142,6 @@ export async function GET(request, { params }) {
           if (s3ConfigHeader) {
             try {
               const s3ConfigReencrypted = JSON.parse(s3ConfigHeader);
-              // Decrypt with server's private key
               const decrypted = rsaKeyManager.decryptWithPrivate(s3ConfigReencrypted.encrypted_data);
               s3Config = JSON.parse(decrypted);
             } catch (decryptErr) {
@@ -143,15 +163,15 @@ export async function GET(request, { params }) {
           }
 
           if (s3Config) {
-            const backupUrl = await s3Provider.getDownloadUrl(authorizedUserId || file.user_id, part.backup_storage_id, s3Config);
+            const backupUrl = await s3Provider.getDownloadUrl(userId, part.backup_storage_id, s3Config);
             const backupRes = await fetch(backupUrl);
             if (backupRes.ok) {
-                telegramResponse = backupRes; // Use backup response
+              encryptedBuffer = Buffer.from(await backupRes.arrayBuffer());
             } else {
-                throw new Error(`S3 HTTP ${backupRes.status}`);
+              throw new Error(`S3 HTTP ${backupRes.status}`);
             }
           } else {
-             throw new Error('No S3 config available');
+            throw new Error('No S3 config available');
           }
         } catch (s3Err) {
           console.error(`[CHUNK] S3 fallback failed for part ${partNumber}:`, s3Err.message);
@@ -160,11 +180,9 @@ export async function GET(request, { params }) {
       }
     }
 
-    if (!telegramResponse || !telegramResponse.ok) {
-       throw new Error(`Failed to fetch chunk. Errors: ${errors.join(', ')}`);
+    if (!encryptedBuffer) {
+      throw new Error(`Failed to fetch chunk. Errors: ${errors.join(', ')}`);
     }
-
-    const encryptedBuffer = Buffer.from(await telegramResponse.arrayBuffer());
 
     return new NextResponse(encryptedBuffer, {
       status: 200,
