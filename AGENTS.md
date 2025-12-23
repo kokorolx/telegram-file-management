@@ -1,0 +1,1 @@
+ALWAYS create new branch and create PR or ask user to create PR before merge.
