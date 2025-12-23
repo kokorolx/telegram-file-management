@@ -54,7 +54,7 @@ export async function GET(request, { params }) {
     // Return metadata
     const parts = allParts.map(part => ({
       part_number: part.part_number,
-      size: part.size,
+      size: Number(part.size),
       iv: part.iv,
       auth_tag: part.auth_tag,
       is_compressed: part.is_compressed
