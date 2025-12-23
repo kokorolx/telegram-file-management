@@ -3,7 +3,7 @@ import { fileService } from '@/lib/fileService';
 import { getFileDownloadUrl } from '@/lib/telegram';
 import { requireAuth } from '@/lib/auth';
 
-export const dynamic = 'force-dynamic';
+// export const dynamic = 'force-dynamic'; // Removed to allow caching
 
 /**
  * GET /api/chunk/[fileId]/[partNumber]
@@ -167,7 +167,7 @@ export async function GET(request, { params }) {
     return new NextResponse(encryptedBuffer, {
       status: 200,
       headers: {
-        'Cache-Control': 'private, max-age=31536000, immutable',
+        'Cache-Control': 'public, max-age=31536000, s-maxage=31536000, immutable',
         'Content-Type': 'application/octet-stream',
         'Content-Length': encryptedBuffer.length.toString(),
         'X-Part-Number': part.part_number.toString(),
