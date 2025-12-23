@@ -42,8 +42,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
 
   // Ref to store parts metadata for chunk lookups
   const partsRef = useRef([]);
-
-
+  const totalChunksRef = useRef(0);
 
   // Ref to track in-flight requests for deduplication
   const fetchingRef = useRef(new Map());
@@ -88,7 +87,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
               );
 
               console.log(`[VideoPlayer] Chunk ${chunkNum} decrypted: ${encryptedBuffer.length} bytes encrypted -> ${decrypted.length} bytes decrypted`);
-              return { decrypted, total: partsRef.current.length };
+              return { decrypted, total: totalChunksRef.current };
           } finally {
               if (fetchingRef.current.get(chunkNum) === fetchPromise) {
                   fetchingRef.current.delete(chunkNum);
@@ -100,11 +99,131 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
       return fetchPromise;
     }, [fileId]);
 
+  // Extract video duration from moov box in MP4 init segment
+  // moov contains trak->tkhd and trak->mdia->mdhd which has duration info
+  const extractDurationFromMoov = (data) => {
+    try {
+      const dv = new DataView(data.buffer, data.byteOffset, data.length);
+      
+      // Debug: show first 100 bytes to see structure
+      const hex = Array.from(data.slice(0, 100)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+      console.log(`[extractDurationFromMoov] First 100 bytes (hex): ${hex}`);
+      
+      // Look for 'moov' box (0x6d6f6f76)
+      let moovStart = -1;
+      for (let i = 0; i < data.length - 4; i++) {
+        if (data[i] === 0x6d && data[i+1] === 0x6f && data[i+2] === 0x6f && data[i+3] === 0x76) {
+          moovStart = i;
+          console.log(`[extractDurationFromMoov] Found moov at offset ${moovStart} (size preceding: ${dv.getUint32(moovStart - 4, false)})`);
+          break;
+        }
+      }
+      
+      if (moovStart === -1) {
+        console.warn('[extractDurationFromMoov] moov box not found in init segment (searched', data.length, 'bytes)');
+        return null;
+      }
+      
+      console.log(`[extractDurationFromMoov] Found moov at offset ${moovStart}`);
+      
+      // Go back 4 bytes to get size
+      const moovSize = dv.getUint32(moovStart - 4, false); // big-endian
+      const moovEnd = moovStart + moovSize;
+      
+      if (moovEnd > data.length) {
+        console.warn(`[extractDurationFromMoov] moov box incomplete: size=${moovSize}, available=${data.length - moovStart}`);
+        return null;
+      }
+      
+      // Look for 'mdhd' box (0x6d646864) which contains duration
+      let mdhdStart = -1;
+      for (let i = moovStart; i < moovEnd - 4; i++) {
+        if (data[i] === 0x6d && data[i+1] === 0x64 && data[i+2] === 0x68 && data[i+3] === 0x64) {
+          mdhdStart = i;
+          break;
+        }
+      }
+      
+      if (mdhdStart === -1) {
+        console.warn('[extractDurationFromMoov] mdhd box not found in moov');
+        return null;
+      }
+      
+      console.log(`[extractDurationFromMoov] Found mdhd at offset ${mdhdStart}`);
+      
+      // mdhd box structure:
+      // [4] size
+      // [4] 'mdhd'
+      // [1] version
+      // [3] flags
+      // then either version 0 or 1
+      
+      const mdhdDataStart = mdhdStart + 8; // skip size + 'mdhd'
+      const version = data[mdhdDataStart];
+      const flags = (data[mdhdDataStart + 1] << 16) | (data[mdhdDataStart + 2] << 8) | data[mdhdDataStart + 3];
+      
+      let timescale, duration;
+      
+      if (version === 0) {
+        // Version 0: 32-bit values
+        // [4] creation_time
+        // [4] modification_time
+        // [4] timescale
+        // [4] duration
+        const timeScaleOffset = mdhdDataStart + 4 + 8;
+        const durationOffset = timeScaleOffset + 4;
+        
+        if (durationOffset + 4 > data.length) {
+          console.warn('[extractDurationFromMoov] mdhd v0 data incomplete');
+          return null;
+        }
+        
+        timescale = dv.getUint32(timeScaleOffset, false);
+        duration = dv.getUint32(durationOffset, false);
+      } else if (version === 1) {
+        // Version 1: 64-bit values
+        // [8] creation_time
+        // [8] modification_time
+        // [4] timescale
+        // [8] duration
+        const timeScaleOffset = mdhdDataStart + 4 + 16;
+        const durationOffset = timeScaleOffset + 4;
+        
+        if (durationOffset + 8 > data.length) {
+          console.warn('[extractDurationFromMoov] mdhd v1 data incomplete');
+          return null;
+        }
+        
+        timescale = dv.getUint32(timeScaleOffset, false);
+        // For 64-bit, just use lower 32 bits (assume duration < 4GB ticks)
+        duration = dv.getUint32(durationOffset + 4, false);
+      } else {
+        console.warn(`[extractDurationFromMoov] Unsupported mdhd version: ${version}`);
+        return null;
+      }
+      
+      if (timescale === 0) {
+        console.warn('[extractDurationFromMoov] invalid timescale=0');
+        return null;
+      }
+      
+      const durationInSeconds = duration / timescale;
+      console.log(`[extractDurationFromMoov] v${version} duration=${duration}, timescale=${timescale} -> ${durationInSeconds.toFixed(2)}s`);
+      
+      return durationInSeconds > 0 ? durationInSeconds : null;
+    } catch (e) {
+      console.error('[extractDurationFromMoov] Exception:', e.message);
+      return null;
+    }
+  };
+
   // Append to MediaSource buffer with queue handling
   const appendToSourceBuffer = useCallback((sourceBuffer, data) => {
     return new Promise((resolve, reject) => {
       if (sourceBuffer.updating) {
+        console.log('[appendToSourceBuffer] SourceBuffer is updating, waiting for updateend...');
         const waitForUpdate = () => {
+          console.log('[appendToSourceBuffer] SourceBuffer updateend received, retrying append...');
           sourceBuffer.removeEventListener('updateend', waitForUpdate);
           appendToSourceBuffer(sourceBuffer, data).then(resolve).catch(reject);
         };
@@ -115,6 +234,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
       const onUpdateEnd = () => {
         sourceBuffer.removeEventListener('updateend', onUpdateEnd);
         sourceBuffer.removeEventListener('error', onError);
+        console.log('[appendToSourceBuffer] Successfully appended data');
         resolve();
       };
 
@@ -123,6 +243,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
         sourceBuffer.removeEventListener('error', onError);
         // Capture the actual error message from the SourceBuffer error event
         const errorMsg = sourceBuffer.error?.message || 'SourceBuffer error';
+        console.error('[appendToSourceBuffer] Error event:', errorMsg);
         reject(new Error(errorMsg));
       };
 
@@ -130,10 +251,12 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
       sourceBuffer.addEventListener('error', onError);
 
       try {
+        console.log(`[appendToSourceBuffer] Appending ${data.length} bytes to sourceBuffer...`);
         sourceBuffer.appendBuffer(data);
       } catch (err) {
         sourceBuffer.removeEventListener('updateend', onUpdateEnd);
         sourceBuffer.removeEventListener('error', onError);
+        console.error('[appendToSourceBuffer] Exception during appendBuffer:', err.message);
         reject(err);
       }
     });
@@ -174,6 +297,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
          const partsData = await partsRes.json();
          const totalChunks = partsData.parts.length;
          partsRef.current = partsData.parts;
+         totalChunksRef.current = totalChunks;
          setTotalChunks(totalChunks);
 
          // Helper to unwrap file key if envelope encryption is used
@@ -214,43 +338,43 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
         });
 
         // For non-fragmented MP4/MOV, download all chunks first
-        // MediaSource API only works with fragmented MP4/MOV or WebM
-        if (isMP4 && !isFragmented) {
-          console.log('[VideoPlayer] Using Full Download: Video is not fragmented.');
-          setPlaybackMode('full-download');
-          setFallbackReason('Video not fragmented');
-          await loadAllChunks(manifest, key);
-          return;
-        }
+         // MediaSource API only works with fragmented MP4/MOV or WebM
+         if (isMP4 && !isFragmented) {
+           console.log('[VideoPlayer] Using Full Download: Video is not fragmented.');
+           setPlaybackMode('full-download');
+           setFallbackReason('Video not fragmented');
+           await loadAllChunks(manifest, key);
+           return;
+         }
 
-        // For WebM or fragmented MP4/MOV, try MediaSource for progressive playback
-        console.log('[VideoPlayer] Attempting MediaSource API setup...');
-        const canUseMediaSource = tryMediaSource(manifest, key);
+         // For WebM or fragmented MP4/MOV, try MediaSource for progressive playback
+          console.log('[VideoPlayer] Attempting MediaSource API setup...');
+          const canUseMediaSource = tryMediaSource(manifest, key, isFragmented);
 
-        if (canUseMediaSource) {
-          console.log('[VideoPlayer] MediaSource API initialized successfully.');
-          setUseMediaSource(true);
-          setPlaybackMode('progressive');
-          return;
-        }
+         if (canUseMediaSource) {
+           console.log('[VideoPlayer] MediaSource API initialized successfully.');
+           setUseMediaSource(true);
+           setPlaybackMode('progressive');
+           return;
+         }
 
-        // Fallback: Download and decrypt all chunks
-        console.warn('[VideoPlayer] MediaSource not supported or initialization failed. Falling back to Full Download.');
-        setPlaybackMode('full-download');
-        // fallbackReason is set inside tryMediaSource on failure
-        await loadAllChunks(manifest, key);
+         // Fallback: Download and decrypt all chunks
+         console.warn('[VideoPlayer] MediaSource not supported or initialization failed. Falling back to Full Download.');
+         setPlaybackMode('full-download');
+         // fallbackReason is set inside tryMediaSource on failure
+         await loadAllChunks(manifest, key);
 
-      } catch (err) {
-        if (err.name === 'AbortError') return;
-        console.error('[VideoPlayer] FATAL ERROR during loadVideo:', err);
-        setError(`Playback failed: ${err.message}`);
-      }
-    };
+         } catch (err) {
+         if (err.name === 'AbortError') return;
+         console.error('[VideoPlayer] FATAL ERROR during loadVideo:', err);
+         setError(`Playback failed: ${err.message}`);
+         }
+         };
 
-    /**
-     * Try to setup MediaSource API for progressive playback
-     */
-    const tryMediaSource = (manifest, key) => {
+         /**
+         * Try to setup MediaSource API for progressive playback
+         */
+         const tryMediaSource = (manifest, key, isFragmented) => {
       if (typeof window === 'undefined' || !window.MediaSource) {
         console.warn('[VideoPlayer] MediaSource API not available in this browser.');
         setFallbackReason('MediaSource API unsupported');
@@ -368,6 +492,31 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
             // DIAGNOSTIC EXTREME: Log first 16 bytes to check for ftyp/moov (valid MP4)
             const headerBytes = Array.from(decrypted.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
             console.log(`[VideoPlayer] Decrypted Header (Hex): ${headerBytes}`);
+            
+            // Try to extract duration from moov box (for timeline scrubbing)
+            let videoDuration = null;
+            if (isFragmented) {
+              try {
+                videoDuration = extractDurationFromMoov(decrypted);
+                if (videoDuration && videoDuration > 0) {
+                  console.log(`[VideoPlayer] ✓ Set mediaSource.duration = ${videoDuration.toFixed(2)}s`);
+                  mediaSource.duration = videoDuration;
+                } else {
+                  console.warn(`[VideoPlayer] Duration extraction failed or returned invalid value: ${videoDuration}`);
+                  // Fallback: estimate from chunk count (rough estimate: ~6 mins per chunk at 2-3MB)
+                  // This allows timeline to show, even if not perfectly accurate
+                  const estimatedDuration = total * 6 * 60; // very conservative estimate
+                  console.log(`[VideoPlayer] Using estimated duration: ${estimatedDuration}s (${total} chunks)`);
+                  mediaSource.duration = estimatedDuration;
+                }
+              } catch (e) {
+                console.error(`[VideoPlayer] Exception during duration extraction:`, e.message);
+                // Fallback: set a large duration to enable timeline
+                const fallbackDuration = total * 6 * 60;
+                console.log(`[VideoPlayer] Using fallback duration: ${fallbackDuration}s`);
+                mediaSource.duration = fallbackDuration;
+              }
+            }
 
             // DIAGNOSTIC: Check what actually happened after append
             if (videoRef.current) {
@@ -385,39 +534,129 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
               });
             }
 
-            console.log(`[VideoPlayer] Successfully appended first chunk (${decrypted.length} bytes). Total parts: ${totalChunks}`);
-            setCurrentChunk(1);
-            setIsLoading(false);
-            setLoadingStage('Playing');
+            console.log(`[VideoPlayer] Successfully appended first chunk (${decrypted.length} bytes). Total parts: ${total}`);
+            
+            // For fragmented videos: init segment + buffer threshold for progressive streaming
+            // For non-fragmented: just load remaining chunks as-is
+            if (isFragmented) {
+              console.log('[VideoPlayer] Fragmented video: chunk 1 is init segment, starting progressive playback...');
+              setCurrentChunk(1);
+              
+              // PROGRESSIVE STREAMING: Load minimal chunks before starting playback
+              const BUFFER_THRESHOLD = 3; // Start playback after init + 2 media chunks
+              let chunksBuffered = 1; // Already have chunk 1 (init segment)
+              
+              // Load chunks until we reach buffer threshold
+              console.log(`[VideoPlayer] Buffering to threshold (${BUFFER_THRESHOLD} chunks)...`);
+              for (let i = 2; i <= Math.min(BUFFER_THRESHOLD, total); i++) {
+                if (cancelled) {
+                  console.log(`[VideoPlayer] Chunk loading cancelled at chunk ${i}`);
+                  break;
+                }
 
-
-            // Try autoplay
-            try {
-              await videoRef.current.play();
-              console.log('[VideoPlayer] Playback started successfully');
-            } catch (e) {
-              console.warn('[VideoPlayer] Autoplay failed:', e.message);
-            }
-
-            // Load remaining chunks in background
-            for (let i = 2; i <= total; i++) {
-              if (cancelled) break;
-
+                try {
+                  console.log(`[VideoPlayer] Pre-buffering chunk ${i}/${total}...`);
+                  const { decrypted: mediaDecrypted } = await fetchAndDecryptChunk(i, key, abortControllerRef.current.signal);
+                  console.log(`[VideoPlayer] Fetched chunk ${i} (${mediaDecrypted.length} bytes), appending...`);
+                  await appendToSourceBuffer(sourceBuffer, mediaDecrypted);
+                  console.log(`[VideoPlayer] Successfully appended chunk ${i}`);
+                  setCurrentChunk(i);
+                  chunksBuffered++;
+                } catch (err) {
+                  console.error(`[VideoPlayer] Failed to pre-buffer chunk ${i}:`, err.message);
+                  // Continue anyway - try to start playback even with partial buffer
+                }
+              }
+              
+              // Enough buffered, allow playback to start
+              setIsLoading(false);
+              setLoadingStage(`Playing (buffering: ${chunksBuffered}/${total} chunks)`);
+              
+              // Try to play immediately
               try {
-                const { decrypted } = await fetchAndDecryptChunk(i, key, abortControllerRef.current.signal);
-                await appendToSourceBuffer(sourceBuffer, decrypted);
-                setCurrentChunk(i);
-              } catch (err) {
-                console.warn(`Failed to load chunk ${i}:`, err.message);
+                console.log('[VideoPlayer] Attempting to play...');
+                await videoRef.current.play();
+                console.log('[VideoPlayer] Playback started');
+              } catch (e) {
+                console.warn('[VideoPlayer] Play failed:', e.message);
               }
-            }
+              
+              // Continue loading a few chunks ahead to avoid buffer issues
+               // Keep only 3-5 chunks buffered, let playback naturally trigger loading more
+               const MAX_CHUNKS_AHEAD = 5;
+               console.log(`[VideoPlayer] Starting background load (keeping max ${MAX_CHUNKS_AHEAD} chunks ahead)`);
+               (async () => {
+                 for (let i = BUFFER_THRESHOLD + 1; i <= Math.min(BUFFER_THRESHOLD + MAX_CHUNKS_AHEAD, total); i++) {
+                   if (cancelled) {
+                     console.log(`[VideoPlayer] Background chunk loading cancelled at chunk ${i}`);
+                     break;
+                   }
 
-            // End stream
-            if (!cancelled && mediaSource.readyState === 'open') {
-              if (sourceBuffer.updating) {
-                await new Promise(r => sourceBuffer.addEventListener('updateend', r, { once: true }));
+                   try {
+                     console.log(`[VideoPlayer] Background loading chunk ${i}/${total}...`);
+                     const { decrypted: mediaDecrypted } = await fetchAndDecryptChunk(i, key, abortControllerRef.current.signal);
+                     console.log(`[VideoPlayer] Fetched background chunk ${i} (${mediaDecrypted.length} bytes), appending...`);
+                     
+                     // Wait for sourceBuffer to finish any pending updates
+                     if (sourceBuffer.updating) {
+                       await new Promise(r => sourceBuffer.addEventListener('updateend', r, { once: true }));
+                     }
+                     
+                     await appendToSourceBuffer(sourceBuffer, mediaDecrypted);
+                     console.log(`[VideoPlayer] Successfully appended background chunk ${i}`);
+                     setCurrentChunk(i);
+                   } catch (err) {
+                     console.error(`[VideoPlayer] Failed to load background chunk ${i}:`, err.message);
+                     // Stop loading if buffer is full, let playback catch up
+                     if (err.message.includes('SourceBuffer is full')) {
+                       console.log(`[VideoPlayer] Buffer full at chunk ${i}, stopping preload`);
+                       break;
+                     }
+                   }
+                 }
+                 
+                 // Signal end of stream only if we loaded everything
+                 if (BUFFER_THRESHOLD + MAX_CHUNKS_AHEAD >= total && !cancelled && mediaSource.readyState === 'open') {
+                   console.log('[VideoPlayer] All chunks buffered, signaling endOfStream...');
+                   if (sourceBuffer.updating) {
+                     await new Promise(r => sourceBuffer.addEventListener('updateend', r, { once: true }));
+                   }
+                   try {
+                     mediaSource.endOfStream();
+                   } catch (e) {
+                     console.warn('[VideoPlayer] endOfStream failed:', e.message);
+                   }
+                 }
+               })();
+            } else {
+              // Non-fragmented: original behavior
+              setCurrentChunk(1);
+              setIsLoading(false);
+              setLoadingStage('Playing');
+              
+              console.log(`[VideoPlayer] Starting background chunk load from 2 to ${total}`);
+              let chunksLoaded = 1;
+              
+              for (let i = 2; i <= total; i++) {
+                if (cancelled) break;
+                try {
+                  const { decrypted: mediaDecrypted } = await fetchAndDecryptChunk(i, key, abortControllerRef.current.signal);
+                  await appendToSourceBuffer(sourceBuffer, mediaDecrypted);
+                  setCurrentChunk(i);
+                  chunksLoaded++;
+                  
+                  if (chunksLoaded === 3 && !videoRef.current?.playing) {
+                    try {
+                      await videoRef.current.play();
+                      console.log('[VideoPlayer] Playback started');
+                    } catch (e) {
+                      console.warn('[VideoPlayer] Play failed:', e.message);
+                    }
+                  }
+                } catch (err) {
+                  console.error(`[VideoPlayer] Failed to load chunk ${i}:`, err.message);
+                }
               }
-              mediaSource.endOfStream();
             }
 
           } catch (err) {
@@ -575,6 +814,27 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
             setError(`Video playback error: ${videoRef.current?.error?.message || 'Unknown error'}`);
           }}
           onWaiting={() => {}}
+          onSeeking={() => {
+            // User is seeking - may need to fetch chunks if seeking to unbuffered area
+            if (useMediaSource && videoRef.current && sourceBufferRef.current) {
+              const seekTime = videoRef.current.currentTime;
+              const buffered = videoRef.current.buffered;
+              
+              // Check if seek target is buffered
+              let isBuffered = false;
+              for (let i = 0; i < buffered.length; i++) {
+                if (seekTime >= buffered.start(i) && seekTime <= buffered.end(i)) {
+                  isBuffered = true;
+                  break;
+                }
+              }
+              
+              if (!isBuffered) {
+                console.log(`[VideoPlayer] Seeking to unbuffered time ${seekTime.toFixed(2)}s, will load on-demand`);
+                // TODO: Implement on-demand chunk loading based on seek position
+              }
+            }
+          }}
         />
       </div>
 

@@ -149,6 +149,7 @@ export async function POST(request) {
       telegram_file_id: storageId,
       backup_storage_id: backupStorageId,
       backup_backend: backupBackend,
+      is_init_segment: body.is_fragmented && part_number === 1,  // First chunk of fragmented video is init segment
     });
 
     if (isLastChunk) {
