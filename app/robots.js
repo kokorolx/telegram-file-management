@@ -12,6 +12,6 @@ export default function robots() {
         ],
       },
     ],
-    sitemap: 'https://tg-vault.com/sitemap.xml',
+    sitemap: 'https://files.thnkandgrow.com/sitemap.xml',
   }
 }

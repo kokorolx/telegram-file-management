@@ -1,5 +1,5 @@
 export default function sitemap() {
-  const baseUrl = 'https://tg-vault.com';
+  const baseUrl = 'https://files.thnkandgrow.com';
 
   const routes = [
     '',

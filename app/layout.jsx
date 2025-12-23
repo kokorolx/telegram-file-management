@@ -3,8 +3,8 @@ import './globals.css'
 const siteConfig = {
   name: 'Telegram Vault',
   description: 'Ultra-secure, decentralized file storage using Telegram infrastructure and local encryption keys. Zero-knowledge by design.',
-  url: 'https://tg-vault.com', // Replace with the actual URL if known
-  ogImage: 'https://tg-vault.com/og-image.png',
+  url: 'https://files.thnkandgrow.com',
+  ogImage: 'https://files.thnkandgrow.com/og-image.png',
 };
 
 export const metadata = {

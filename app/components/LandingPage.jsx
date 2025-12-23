@@ -42,7 +42,7 @@ export default function LandingPage({ onLaunch }) {
             'author': {
               '@type': 'Organization',
               'name': 'Telegram Vault',
-              'url': 'https://tg-vault.com',
+              'url': 'https://files.thnkandgrow.com',
             },
           }),
         }}
