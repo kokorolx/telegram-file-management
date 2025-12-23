@@ -211,10 +211,60 @@ export default function FileLightbox({
       } else {
         setError(err.message);
       }
+
+      // Auto-run diagnostics on failure to help user identify root cause
+      if (file.is_encrypted && isUnlocked) {
+        runDiagnostics(file, encryptionKey, masterPassword);
+      }
     } finally {
       setLoading(false);
       isFetchingRef.current = false;
     }
+  };
+
+  const runDiagnostics = async (file, key, password) => {
+    console.group(`🔍 Decryption Diagnostics for ${file.original_filename}`);
+    try {
+      console.log('1. Checking File Metadata...');
+      console.log(`   ID: ${file.id}`);
+      console.log(`   Size: ${file.file_size}`);
+      console.log(`   Mime: ${file.mime_type}`);
+
+      console.log('2. Fetching Part Metadata...');
+      const parts = await fetchFilePartMetadata(file.id, shareToken);
+      console.log(`   Total Parts: ${parts.length}`);
+
+      if (parts.length > 0) {
+        const first = parts[0];
+        console.log('3. Inspecting First Chunk...');
+        console.log(`   Part #: ${first.part_number}`);
+        console.log(`   Size: ${first.size} bytes`);
+        console.log(`   IV: ${first.iv ? `Present (${first.iv.length} chars)` : 'MISSING'}`);
+        console.log(`   Auth Tag: ${first.auth_tag ? `Present (${first.auth_tag.length} chars)` : 'MISSING'}`);
+
+        if (!first.iv || !first.auth_tag) {
+            console.error('❌ CRITICAL: Missing IV or Auth Tag in metadata!');
+        } else {
+            console.log('4. Attempting Single Chunk Decryption...');
+            try {
+                // Use the verify util which tries to decrypt the first chunk
+                const { verifyFileKey } = await import('@/lib/clientDecryption');
+                const success = await verifyFileKey(file, key, parts, !!customKey, password);
+                if (success) {
+                    console.log('✅ Single chunk decryption SUCCESS. Key is correct.');
+                    console.log('   Issue might be with subsequent chunks or memory.');
+                } else {
+                    console.error('❌ Single chunk decryption FAILED. Key/IV/Data mismatch.');
+                }
+            } catch (vErr) {
+                 console.error('❌ Verification Error:', vErr);
+            }
+        }
+      }
+    } catch (dErr) {
+        console.error('Diagnostic failed:', dErr);
+    }
+    console.groupEnd();
   };
 
   const handleUnlock = async (e) => {
