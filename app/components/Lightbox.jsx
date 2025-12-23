@@ -78,6 +78,9 @@ export default function FileLightbox({
   const [error, setError] = useState(null);
   const [mounted, setMounted] = useState(false);
   const [inputPassword, setInputPassword] = useState('');
+  const [progress, setProgress] = useState(0);
+  const [eta, setEta] = useState(null);
+  const startTimeRef = useRef(null);
   const isFetchingRef = useRef(false);
 
   useEffect(() => {
@@ -103,6 +106,9 @@ export default function FileLightbox({
       isFetchingRef.current = true;
       setLoading(true);
       setError(null);
+      setProgress(0);
+      setEta(null);
+      startTimeRef.current = Date.now();
 
       let url = null;
 
@@ -115,7 +121,28 @@ export default function FileLightbox({
         // Use getCachedOrDecrypt to prevent concurrent fetches
         const entry = await getCachedOrDecrypt(file.id, async () => {
           const parts = initialParts || await fetchFilePartMetadata(file.id, shareToken);
-          const blob = await fetchAndDecryptFullFile(file, encryptionKey, parts, shareToken, !!customKey, masterPassword);
+          const blob = await fetchAndDecryptFullFile(
+            file,
+            encryptionKey,
+            parts,
+            shareToken,
+            !!customKey,
+            masterPassword,
+            (completed, total) => {
+              const percent = (completed / total) * 100;
+              setProgress(Math.round(percent));
+
+              if (startTimeRef.current) {
+                const elapsed = (Date.now() - startTimeRef.current) / 1000;
+                if (elapsed > 0.5 && completed > 0) {
+                  const speed = completed / elapsed;
+                  const remaining = total - completed;
+                  const estimatedSeconds = remaining / speed;
+                  setEta(Math.ceil(estimatedSeconds));
+                }
+              }
+            }
+          );
 
           // Force MIME type for PDF/Audio if needed
           let mimeType = blob.type;
@@ -218,14 +245,36 @@ export default function FileLightbox({
 
   if (!isOpen || !mounted) return null;
 
+  const formatEta = (seconds) => {
+    if (!seconds) return '';
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  };
+
   const content = (
     <>
       {/* Loading State Overlay */}
       {loading && (
-        <div className="fixed inset-0 z-[99999] bg-black/80 flex items-center justify-center">
-          <div className="text-white text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4" />
-            <p>Processing...</p>
+        <div className="fixed inset-0 z-[99999] bg-black/80 flex items-center justify-center backdrop-blur-sm">
+          <div className="text-white text-center bg-gray-900/80 p-8 rounded-3xl border border-white/10 shadow-2xl animate-in zoom-in duration-200">
+            <div className="relative w-20 h-20 mx-auto mb-6">
+              <div className="absolute inset-0 border-4 border-blue-500/30 rounded-full"></div>
+              <div className="absolute inset-0 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              <div className="absolute inset-0 flex items-center justify-center font-bold text-sm">
+                {progress}%
+              </div>
+            </div>
+            <h3 className="text-xl font-bold mb-1">Decrypting...</h3>
+            <p className="text-blue-200 text-sm font-medium opacity-80 mb-2">
+              Processing {file?.file_size ? `${(file.file_size / 1024 / 1024).toFixed(1)} MB` : ''} in browser
+            </p>
+            {eta !== null && eta > 0 && (
+              <div className="inline-block bg-blue-500/20 px-3 py-1 rounded-lg text-xs font-mono text-blue-300 border border-blue-500/30">
+                ⏱️ ETA: {formatEta(eta)}
+              </div>
+            )}
           </div>
         </div>
       )}
