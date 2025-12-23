@@ -82,6 +82,12 @@ export default function LandingPage({ onLaunch }) {
                   color: 'emerald'
                 },
                 {
+                  title: 'Secure Collaboration',
+                  desc: 'Share entire vaults with trusted members. Grant "contributor" access without revealing your master keys.',
+                  icon: '🤝',
+                  color: 'cyan'
+                },
+                {
                   title: 'Bot Persistence',
                   desc: 'Exclusive S3-hybrid mode keeps your data alive even if Telegram bots are restricted.',
                   icon: '⚙️',
@@ -89,7 +95,7 @@ export default function LandingPage({ onLaunch }) {
                 }
               ].map((pillar, i) => (
                 <div key={i} className="group p-8 rounded-[2.5rem] bg-white/[0.03] border border-white/10 hover:border-blue-500/50 transition-all hover:translate-y-[-8px]">
-                  <div className={`w-14 h-14 bg-${pillar.color}-500/10 rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-inner`}>
+                  <div className={`w-14 h-14 bg-${pillar.color === 'cyan' ? 'cyan' : pillar.color}-500/10 rounded-2xl flex items-center justify-center text-3xl mb-6 shadow-inner`}>
                     {pillar.icon}
                   </div>
                   <h3 className="text-2xl font-bold mb-4">{pillar.title}</h3>
