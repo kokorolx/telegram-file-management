@@ -40,6 +40,11 @@ export async function GET(request, { params }) {
         iv: p.iv,
         auth_tag: p.auth_tag
       })) || []
+    }, {
+      headers: {
+        'Cache-Control': 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400',
+        'Vary': 'Accept-Encoding'
+      }
     });
 
   } catch (err) {

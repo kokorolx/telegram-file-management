@@ -19,15 +19,14 @@ export async function GET(request, { params }) {
       await rsaKeyManager.init();
     }
 
-    // Verify authentication OR valid share token
-    const auth = await requireAuth(request);
     const { searchParams } = new URL(request.url);
     const shareToken = searchParams.get('share_token');
 
-    let isAuthorized = auth.authenticated;
-    let authorizedUserId = auth.user?.id;
+    let isAuthorized = false;
+    let authorizedUserId = null;
 
-    if (!isAuthorized && shareToken) {
+    // Priority 1: Check share token (doesn't trigger session/cookie logic)
+    if (shareToken) {
         const { sharedLinkRepository } = await import('@/lib/repositories/SharedLinkRepository');
         const sharedLink = await sharedLinkRepository.findByToken(shareToken);
         if (sharedLink && sharedLink.file_id === fileId) {
@@ -39,8 +38,15 @@ export async function GET(request, { params }) {
         }
     }
 
+    // Priority 2: Check session authentication if not authorized via token
     if (!isAuthorized) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const auth = await requireAuth(request);
+        if (auth.authenticated) {
+            isAuthorized = true;
+            authorizedUserId = auth.user?.id;
+        } else {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
     }
 
     const partNumber = parseInt(partNumberParam, 10);
@@ -90,7 +96,7 @@ export async function GET(request, { params }) {
 
     try {
       const dlUrl = await getFileDownloadUrl(authorizedUserId || file.user_id, part.telegram_file_id);
-      telegramResponse = await fetch(dlUrl, { next: { revalidate: 0 } });
+      telegramResponse = await fetch(dlUrl);
 
       if (!telegramResponse.ok) {
         throw new Error(`HTTP ${telegramResponse.status}`);
@@ -171,6 +177,7 @@ export async function GET(request, { params }) {
         'Content-Type': 'application/octet-stream',
         'Content-Length': encryptedBuffer.length.toString(),
         'X-Part-Number': part.part_number.toString(),
+        'Vary': 'Accept-Encoding',
       }
     });
   } catch (err) {
