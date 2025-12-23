@@ -26,17 +26,17 @@ export async function GET(request, { params }) {
       file: {
         id: sharedLink.file.id,
         original_filename: sharedLink.file.original_filename,
-        file_size: sharedLink.file.file_size,
+        file_size: Number(sharedLink.file.file_size),
         mime_type: sharedLink.file.mime_type,
         is_encrypted: true,
-        encryption_version: 2
+        encryption_version: sharedLink.file.encryption_version || 2
       },
       isPasswordProtected: sharedLink.is_password_protected,
       wrappedKey: sharedLink.wrapped_file_key,
       keyIv: sharedLink.key_iv,
       parts: sharedLink.file.parts?.sort((a,b) => a.part_number - b.part_number).map(p => ({
         part_number: p.part_number,
-        size: p.size,
+        size: Number(p.size),
         iv: p.iv,
         auth_tag: p.auth_tag
       })) || []
@@ -71,16 +71,16 @@ export async function POST(request, { params }) {
         file: {
           id: sharedLink.file.id,
           original_filename: sharedLink.file.original_filename,
-          file_size: sharedLink.file.file_size,
+          file_size: Number(sharedLink.file.file_size),
           mime_type: sharedLink.file.mime_type,
           is_encrypted: true,
-          encryption_version: 2
+          encryption_version: sharedLink.file.encryption_version || 2
         },
         wrappedKey: sharedLink.wrapped_file_key,
         keyIv: sharedLink.key_iv,
         parts: sharedLink.file.parts?.sort((a,b) => a.part_number - b.part_number).map(p => ({
             part_number: p.part_number,
-            size: p.size,
+            size: Number(p.size),
             iv: p.iv,
             auth_tag: p.auth_tag
         })) || []
