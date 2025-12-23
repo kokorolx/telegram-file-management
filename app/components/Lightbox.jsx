@@ -60,6 +60,60 @@ function getFileTypeName(mimeTypeOrFilename) {
   return 'File';
 }
 
+const TextPreview = ({ src, filename }) => {
+  const [content, setContent] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch(src)
+      .then(r => r.text())
+      .then(text => {
+        if (isMounted) {
+          setContent(text);
+          setLoading(false);
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load text content:', err);
+        if (isMounted) {
+          setContent('Error: Failed to load text content.');
+          setLoading(false);
+        }
+      });
+    return () => { isMounted = false; };
+  }, [src]);
+
+  if (loading) {
+      return (
+          <div className="flex items-center justify-center h-full text-white/50">
+              <div className="w-8 h-8 border-2 border-white/20 border-t-white/80 rounded-full animate-spin"></div>
+          </div>
+      );
+  }
+
+  return (
+    <div className="w-full h-full p-4 md:p-8 lg:p-12 flex flex-col items-center">
+        <div className="w-full max-w-5xl h-full bg-gray-950/90 rounded-2xl border border-white/10 overflow-hidden flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.5)] backdrop-blur-xl animate-in zoom-in-95 fade-in duration-300">
+            <div className="px-6 py-4 border-b border-white/10 bg-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <span className="text-xl">📄</span>
+                    <span className="text-gray-200 font-medium text-sm truncate max-w-xs md:max-w-md">{filename}</span>
+                </div>
+                <div className="flex gap-2">
+                    <div className="w-3 h-3 rounded-full bg-red-500/50"></div>
+                    <div className="w-3 h-3 rounded-full bg-amber-500/50"></div>
+                    <div className="w-3 h-3 rounded-full bg-emerald-500/50"></div>
+                </div>
+            </div>
+            <div className="flex-1 overflow-auto p-6 font-mono text-[13px] md:text-sm text-gray-300 leading-relaxed selection:bg-blue-500/30">
+                <pre className="whitespace-pre-wrap break-all h-full">{content}</pre>
+            </div>
+        </div>
+    </div>
+  );
+};
+
 export default function FileLightbox({
     file,
     isOpen,
@@ -167,10 +221,16 @@ export default function FileLightbox({
       }
 
       // Create slide based on mime type
+      const fileExt = file.original_filename.split('.').pop()?.toLowerCase() || '';
+
+      const codeExtensions = ['js', 'jsx', 'ts', 'tsx', 'py', 'c', 'cpp', 'h', 'java', 'go', 'rs', 'php', 'rb', 'swift', 'kt', 'sh', 'sql', 'html', 'css', 'json', 'xml', 'yaml', 'yml', 'md', 'csv'];
+      const textExtensions = ['txt', 'log', 'env', 'ini', 'conf', ...codeExtensions];
+
       const isImage = file.mime_type?.startsWith('image/');
       const isVideo = file.mime_type?.startsWith('video/');
       const isAudio = file.mime_type?.startsWith('audio/');
-      const isPDF = file.mime_type?.includes('pdf');
+      const isPDF = file.mime_type?.includes('pdf') || fileExt === 'pdf';
+      const isText = file.mime_type?.startsWith('text/') || textExtensions.includes(fileExt);
 
       let slide = {};
       if (isImage) {
@@ -196,6 +256,12 @@ export default function FileLightbox({
         slide = {
           type: 'pdf',
           src: url,
+        };
+      } else if (isText) {
+        slide = {
+          type: 'text',
+          src: url,
+          filename: file.original_filename
         };
       } else {
         slide = {
@@ -433,6 +499,9 @@ export default function FileLightbox({
                     <p className="text-gray-400 mt-2">Audio Preview</p>
                   </div>
                 );
+              }
+              if (slide.type === 'text') {
+                return <TextPreview src={slide.src} filename={slide.filename} />;
               }
               if (slide.type === 'unsupported') {
                 return (
