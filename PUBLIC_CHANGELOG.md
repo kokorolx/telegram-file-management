@@ -152,7 +152,7 @@ A completely private, encrypted vault for your files with the reliability of Tel
 - [ ] **Advanced File Previews** - Support for CSV, JSON, source code, documents, and more with syntax highlighting
 - [ ] **Enterprise Support** - Role-Based Access Control (RBAC), audit logs, compliance features, and dedicated support
 - [ ] Advanced file versioning and restore
-- [ ] Collaborative sharing with access control
+- [ ] **Collaborative Shared Vaults** - Share your entire vault with trusted partners and allow them to contribute files directly with full access control
 - [ ] Bulk operations (multi-select, batch delete)
 - [ ] Mobile app support
 - [ ] White-label options for enterprises

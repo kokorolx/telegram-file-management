@@ -1,11 +1,24 @@
 'use client';
 
+import React from 'react';
 import Link from 'next/link';
 import PublicHeader from '../components/PublicHeader';
 import PublicFooter from '../components/PublicFooter';
 import ContactForm from '../components/ContactForm';
 import { useRouter } from 'next/navigation';
 import { config } from '@/lib/config';
+
+const CheckIcon = ({ className }) => (
+  <svg className={`w-5 h-5 mx-auto ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
+  </svg>
+);
+
+const XIcon = () => (
+  <svg className="w-5 h-5 mx-auto text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"></path>
+  </svg>
+);
 
 export default function PricingPage() {
   const router = useRouter();
@@ -18,15 +31,17 @@ export default function PricingPage() {
       features: [
         'Unlimited Telegram Storage',
         'Zero-Knowledge Encryption',
+        'Browser-Side Decryption',
         'Secure Folder Management',
         'On-the-fly Decryption',
         'Search & Tags',
-        'Vercel Edge Ready',
+        '2GB+ File Support',
+        'Guest Shared Access',
       ],
       notIncluded: [
-        'Video Streaming',
-        'Background Transcoding',
-        'S3 Bot Persistence',
+        'HD Video Streaming',
+        'Personal S3/R2 Backup',
+        'Recovery Security Codes',
       ],
       cta: 'Start for Free',
       href: '/',
@@ -42,9 +57,10 @@ export default function PricingPage() {
         'Everything in Free',
         'HD Video Streaming',
         'Thumbnail Generation',
-        'Custom Metadata Exports',
+        'Personal S3/R2 Backup',
+        'Master Password Recovery Codes',
+        'Smart CDN Edge Caching',
         'Priority Slack Support',
-        'Self-hosted Auth Control',
       ],
       cta: 'Get Started Pro',
       href: '/',
@@ -63,14 +79,15 @@ export default function PricingPage() {
         'Redis-backed HA Scaling',
         'Audit Logs & Compliance',
         'Role-Based Access (RBAC)',
-        'Managed Backups',
+        'Collaborative Vault Sharing',
         'White-label Options',
       ],
       cta: 'Contact Sales',
       href: '#contact',
       featured: false,
     },
-  ] // .filter(tier => config.isEnterprise || tier.name !== 'Business');
+  ]
+ // .filter(tier => config.isEnterprise || tier.name !== 'Business');
 
   return (
     <div className="min-h-screen bg-[#050505] text-white selection:bg-blue-500/30">
@@ -162,6 +179,100 @@ export default function PricingPage() {
                 </Link>
               </div>
             ))}
+          </div>
+
+          {/* Feature Comparison Table */}
+          <div className="mt-32 space-y-12">
+            <div className="text-center space-y-4">
+              <h3 className="text-3xl md:text-5xl font-bold italic tracking-tight">
+                Compare <span className="text-blue-500">Features</span>
+              </h3>
+              <p className="text-gray-400 font-medium">Clear breakdown of everything we offer</p>
+            </div>
+
+            <div className="overflow-x-auto pb-8">
+              <div className="min-w-[800px] bg-white/[0.02] border border-white/10 rounded-[2.5rem] overflow-hidden backdrop-blur-md">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 bg-white/[0.05]">
+                      <th className="py-6 px-8 text-xs font-bold uppercase tracking-widest text-gray-500">Category / Feature</th>
+                      <th className="py-6 px-8 text-center text-xs font-bold uppercase tracking-widest text-white">Free</th>
+                      <th className="py-6 px-8 text-center text-xs font-bold uppercase tracking-widest text-blue-400">Self-host</th>
+                      <th className="py-6 px-8 text-center text-xs font-bold uppercase tracking-widest text-indigo-400">Business</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      {
+                        category: 'Storage & Encryption',
+                        features: [
+                          { name: 'Unlimited Telegram Storage', free: true, self: true, biz: true },
+                          { name: 'Zero-Knowledge Architecture', free: true, self: true, biz: true },
+                          { name: 'Local (Browser-Side) Decryption', free: true, self: true, biz: true },
+                          { name: 'Vercel Edge Ready', free: true, self: true, biz: true },
+                          { name: '2GB+ File Support', free: true, self: true, biz: true },
+                        ]
+                      },
+                      {
+                        category: 'Sharing & Access',
+                        features: [
+                          { name: 'Secure Expiring Links', free: true, self: true, biz: true },
+                          { name: 'Guest Access (No Login Required)', free: true, self: true, biz: true },
+                          { name: 'Password Protected Shares', free: true, self: true, biz: true },
+                          { name: 'Secure Folder Management', free: true, self: true, biz: true },
+                          { name: 'Collaborative Vault Sharing', free: false, self: false, biz: true },
+                        ]
+                      },
+                      {
+                        category: 'Media & Performance',
+                        features: [
+                          { name: 'HD Video Streaming', free: false, self: true, biz: true },
+                          { name: 'Thumbnail Generation', free: false, self: true, biz: true },
+                          { name: 'Smart CDN Edge Caching', free: false, self: true, biz: true },
+                          { name: 'Parallel Parallel Processing', free: false, self: true, biz: true },
+                        ]
+                      },
+                      {
+                        category: 'Security & Backup',
+                        features: [
+                          { name: 'Master Password Recovery Codes', free: false, self: true, biz: true },
+                          { name: 'Personal S3/R2 Backup', free: false, self: true, biz: true },
+                          { name: 'Bot Persistence (S3 Hybrid)', free: false, false: false, biz: true },
+                          { name: 'Resumable Uploads', free: false, false: false, biz: true },
+                        ]
+                      },
+                      {
+                        category: 'Enterprise & Scaling',
+                        features: [
+                          { name: 'Redis-backed HA Scaling', free: false, self: false, biz: true },
+                          { name: 'Audit Logs & Compliance', free: false, self: false, biz: true },
+                          { name: 'Role-Based Access (RBAC)', free: false, self: false, biz: true },
+                          { name: 'White-label Options', free: false, self: false, biz: true },
+                        ]
+                      },
+                    ].map((group, idx) => (
+                      <React.Fragment key={idx}>
+                        <tr className="bg-white/[0.03]">
+                          <td colSpan="4" className="py-4 px-8 text-[10px] font-bold uppercase tracking-[0.2em] text-blue-500/80 font-mono">
+                            {group.category}
+                          </td>
+                        </tr>
+                        {group.features.map((feature, fIdx) => (
+                          <tr key={fIdx} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group">
+                            <td className="py-5 px-8">
+                              <span className="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">{feature.name}</span>
+                            </td>
+                            <td className="py-5 px-8 text-center">{feature.free ? <CheckIcon className="text-emerald-500" /> : <XIcon />}</td>
+                            <td className="py-5 px-8 text-center">{feature.self ? <CheckIcon className="text-blue-500" /> : <XIcon />}</td>
+                            <td className="py-5 px-8 text-center">{feature.biz ? <CheckIcon className="text-indigo-500" /> : <XIcon />}</td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
 
           {/* FAQ / Trust Section */}
