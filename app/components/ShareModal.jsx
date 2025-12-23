@@ -67,7 +67,7 @@ export default function ShareModal({ file, isOpen, onClose }) {
             await encryptFileChunks(
                 fileWrapper,
                 encryptionKey,
-                (p, t, m) => console.log(`Upgrade: ${m} ${Math.round(p/t*100)}%`),
+                (p, t, m) => {},
                 file.folder_id,
                 null, // abortSignal
                 file.id // Update existing file
@@ -89,15 +89,6 @@ export default function ShareModal({ file, isOpen, onClose }) {
             setSharing(true);
             setError('');
 
-            console.log('Generating share link for file:', {
-                id: file.id,
-                name: file.original_filename,
-                version: file.encryption_version,
-                hasEncryptedKey: !!file.encrypted_file_key,
-                hasKeyIv: !!file.key_iv,
-                hasEncryptionKey: !!encryptionKey,
-                hasSalt: !!salt
-            });
 
             let dek;
             if (file.encryption_version === 2) {

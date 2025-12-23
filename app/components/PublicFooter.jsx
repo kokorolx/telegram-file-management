@@ -20,6 +20,7 @@ export default function PublicFooter() {
         <div className="flex flex-wrap items-center justify-center gap-8 text-xs font-bold uppercase tracking-widest text-gray-500">
           <Link href="/landing" className="hover:text-white transition">Product</Link>
           <Link href="/pricing" className="hover:text-white transition">Pricing</Link>
+          <Link href="/roadmap" className="hover:text-white transition">Roadmap</Link>
           <Link href="/changelog" className="hover:text-white transition">Changelog</Link>
           <a href="https://github.com/kokorolx" target="_blank" rel="noopener noreferrer" className="hover:text-white transition">Source Code</a>
           <Link href="/" className="hover:text-white transition">Try Demo</Link>

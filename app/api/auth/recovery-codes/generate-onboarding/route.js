@@ -66,7 +66,6 @@ export async function POST(request) {
     await recoveryCodeService.setRecoveryCodesGeneratedOnFirstSetup(user.id, true);
 
     // Log audit event
-    console.log(`[AUDIT] Recovery codes generated during onboarding for user ${user.id}`);
 
     return NextResponse.json({
       success: true,

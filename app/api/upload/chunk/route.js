@@ -83,7 +83,6 @@ export async function POST(request) {
       if (cached && cached.expiresAt > Date.now()) {
         s3Config = cached.s3Config;
         configSource = cached.configSource;
-        console.log(`[BACKUP] Using cached S3 config for chunk ${part_number} (${configSource})`);
       } else {
         // Priority 1: Personal S3 config (re-encrypted by browser with server's public key)
         const { s3_config_reencrypted } = body;
@@ -93,7 +92,6 @@ export async function POST(request) {
             const decrypted = rsaKeyManager.decryptWithPrivate(s3_config_reencrypted.encrypted_data);
             s3Config = JSON.parse(decrypted);
             configSource = 'Personal';
-            console.log(`[BACKUP] Using personal S3 config (bucket: ${s3Config.bucket})`);
           } catch (decryptErr) {
             console.warn(`[BACKUP] Failed to decrypt personal S3 config: ${decryptErr.message}`);
             s3Config = null;
@@ -111,7 +109,6 @@ export async function POST(request) {
             storageClass: config.s3StorageClass || 'STANDARD'
           };
           configSource = 'Global';
-          console.log(`[BACKUP] Using global S3 config (bucket: ${s3Config.bucket})`);
         }
 
         // Cache the config for remaining chunks
@@ -127,9 +124,7 @@ export async function POST(request) {
       if (s3Config) {
         backupStorageId = await s3Provider.uploadChunk(userId, encryptedBuffer, chunkFilename, s3Config, file_id);
         backupBackend = s3Config.endpoint?.includes('r2.cloudflarestorage.com') ? 'R2' : 'S3';
-        console.log(`[BACKUP] Chunk ${part_number} uploaded to ${backupBackend} (${configSource})`);
       } else {
-        console.log(`[BACKUP] No S3 config available`);
       }
     } catch (backupErr) {
       // Non-blocking: Log warning but don't fail the upload

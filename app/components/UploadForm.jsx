@@ -51,7 +51,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
     }));
 
     newFiles.forEach(f => {
-      console.log(`[UPLOAD] Added to queue: ${f.file.name} (${(f.file.size / 1024 / 1024).toFixed(2)}MB) - ID: ${f.id}`);
     });
 
     setQueue(prev => [...prev, ...newFiles]);
@@ -59,7 +58,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
 
   // Handle password verification for upload
   const handlePasswordSubmit = async (password) => {
-    console.log(`[UPLOAD] Password verification started for file: ${pendingFileForUpload?.file?.name}`);
     setIsVerifyingPassword(true);
     try {
       const response = await fetch('/api/auth/verify-master', {
@@ -73,14 +71,12 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
         throw new Error('Invalid master password');
       }
 
-      console.log(`[UPLOAD] ✓ Password verified successfully`);
       // Password verified, proceed with upload
       setShowPasswordPrompt(false);
       setIsVerifyingPassword(false);
 
       // Continue with the file that was waiting
       if (pendingFileForUpload) {
-        console.log(`[UPLOAD] Starting file upload: ${pendingFileForUpload.file.name}`);
         setPendingFileForUpload(null);
         uploadFile(pendingFileForUpload, password);
       }
@@ -92,7 +88,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
   };
 
   const cancelUpload = async (fileId) => {
-    console.log(`[UPLOAD] ${fileId} - Cancel requested`);
 
     // Abort any ongoing fetch requests
     const abortController = abortControllersRef.current.get(fileId);
@@ -103,7 +98,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
 
     // Remove from queue
     setQueue(prev => prev.filter(f => f.id !== fileId));
-    console.log(`[UPLOAD] ${fileId} - Cancelled and removed from queue`);
   };
 
 
@@ -156,9 +150,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
 
   const uploadFile = useCallback(async (fileItem, password) => {
      // const startTime = Date.now();
-     console.log(`[UPLOAD] ${fileItem.id} - Starting upload: ${fileItem.file.name}`);
-     console.log(`[UPLOAD] ${fileItem.id} - Password provided: ${password ? 'YES' : 'NO'}`);
-     console.log(`[UPLOAD] ${fileItem.id} - isEncrypted: ${isEncrypted}`);
 
      // Create abort controller for this upload
      const abortController = new AbortController();
@@ -173,7 +164,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
 
     try {
       // NEW: Check for resumable upload
-      console.log(`[UPLOAD] ${fileItem.id} - Checking for existing upload...`);
       const checkRes = await fetch(
         `/api/upload/check?filename=${encodeURIComponent(fileItem.file.name)}&size=${fileItem.file.size}`,
         { signal: abortController.signal }
@@ -190,10 +180,8 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
         fileId = checkData.file_id;
         resumeFrom = Math.min(...checkData.missing_chunks);
         isResume = true;
-        console.log(`[UPLOAD] ${fileItem.id} - ✓ Resume available: chunks ${resumeFrom}-${checkData.total_chunks}`);
 
         // Retrieve the saved chunk plan from server
-        console.log(`[UPLOAD] ${fileItem.id} - Retrieving chunk plan...`);
         const chunkPlanRes = await fetch(
           `/api/upload/chunk-plan?file_id=${fileId}`,
           { signal: abortController.signal }
@@ -201,7 +189,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
         if (chunkPlanRes.ok) {
           const chunkPlanData = await chunkPlanRes.json();
           chunkPlan = chunkPlanData.chunk_sizes;
-          console.log(`[UPLOAD] ${fileItem.id} - ✓ Retrieved chunk plan: ${chunkPlan.length} chunks`);
         }
 
         updateFileStatus(
@@ -212,7 +199,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
           `Resuming from chunk ${resumeFrom}/${checkData.total_chunks}`
         );
       } else if (checkData.exists) {
-        console.log(`[UPLOAD] ${fileItem.id} - Upload exists but already complete`);
         updateFileStatus(fileItem.id, 'error', 0, 'File already uploaded');
         return;
       }
@@ -235,7 +221,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
 
               if (isNowUploading && !uploadStartTimeLocal) {
                 uploadStartTimeLocal = Date.now();
-                console.log(`[UPLOAD] ${fileItem.id} - Upload phase started, tracking speed from now`);
               }
 
               // Calculate ETA based on upload speed
@@ -248,7 +233,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
               const eta = calculateETA(fileItem.file.size, progress, uploadStartTimeLocal, stage, bytesAlreadyUploaded);
 
               updateFileStatus(fileItem.id, 'uploading', progress, null, stage, eta);
-              console.log(`[UPLOAD] ${fileItem.id} - ${stage} (${partNumber}/${totalParts}) | Progress: ${Math.round(progress)}% | ETA: ${eta ? formatTimeRemaining(eta) : 'calculating...'}`);
             },
             fileItem.folderId, // Use the folderId stored in the file item
             abortController.signal,
@@ -257,7 +241,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
             chunkPlan      // Pass saved chunk sizes for resume
           );
 
-          console.log(`[UPLOAD] ${fileItem.id} - ✓ Encrypted upload successful${isResume ? ' (resumed)' : ''}`);
           updateFileStatus(fileItem.id, 'success', 100);
         } catch (encErr) {
           console.error(`[UPLOAD] ${fileItem.id} - Encryption failed:`, encErr);
@@ -273,7 +256,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
     } catch (err) {
       // Check if it was a user cancellation
       if (err.message.includes('cancelled') || err.message.includes('Abort')) {
-        console.log(`[UPLOAD] ${fileItem.id} - Cancelled by user`);
         // Already removed from queue by cancelUpload
       } else {
         console.error(`[UPLOAD] ${fileItem.id} - FAILED:`, err.message);
@@ -298,11 +280,9 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
         // All files must be encrypted
         if (isUnlocked && masterPassword) {
           // User already unlocked - use the master password automatically
-          console.log(`[UPLOAD] User unlocked - using master password automatically for ${pendingFile.file.name}`);
           uploadFile(pendingFile, masterPassword);
         } else if (!showPasswordPrompt) {
           // User not unlocked - show password prompt to unlock
-          console.log(`[UPLOAD] User not unlocked - showing password prompt for ${pendingFile.file.name}`);
           setPendingFileForUpload(pendingFile);
           setShowPasswordPrompt(true);
           // Only show prompt for the first one, others will wait

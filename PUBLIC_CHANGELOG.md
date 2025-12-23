@@ -146,11 +146,11 @@ A completely private, encrypted vault for your files with the reliability of Tel
 ### 🚀 In Development
 - [ ] **Video Processing** - Transcoding, thumbnail generation, and adaptive streaming for video files
 - [ ] **Session Management & Load Balancing** - Redis-backed session persistence with multi-node deployment support
+
+### 📋 Future Roadmap
 - [ ] **Backup Service** - Automated backup integration (WordPress, databases, etc.) with encrypted storage and restore capabilities
 - [ ] **Advanced File Previews** - Support for CSV, JSON, source code, documents, and more with syntax highlighting
 - [ ] **Enterprise Support** - Role-Based Access Control (RBAC), audit logs, compliance features, and dedicated support
-
-### 📋 Future Roadmap
 - [ ] Advanced file versioning and restore
 - [ ] Collaborative sharing with access control
 - [ ] Bulk operations (multi-select, batch delete)

@@ -79,7 +79,6 @@ export async function GET(request) {
 
     const canResume = missingChunks.length > 0 && uploadedParts.length > 0;
 
-    console.log(`[RESUME] Check for ${filename}: exists=true, uploaded=${uploadedParts.length}, missing=${missingChunks.length}`);
 
     return NextResponse.json({
       exists: true,

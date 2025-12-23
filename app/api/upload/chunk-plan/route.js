@@ -52,7 +52,6 @@ export async function GET(request) {
       );
     }
 
-    console.log(`[RESUME] Retrieved chunk plan for ${fileId}: ${chunkSizes.length} chunks`);
 
     return NextResponse.json({
       file_id: fileId,

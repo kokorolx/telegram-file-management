@@ -25,7 +25,6 @@ export function EncryptionProvider({ children }) {
   // Auto-lock on logout
   useEffect(() => {
     if (!user && isUnlocked) {
-      console.log('User logged out, locking vault and clearing cache...');
       lock();
     }
   }, [user, isUnlocked, lock]);

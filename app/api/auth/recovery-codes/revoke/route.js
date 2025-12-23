@@ -64,7 +64,6 @@ export async function POST(request) {
     const codesRevoked = await recoveryCodeService.revokeAllCodes(user.id, 'user_request');
 
     // Log audit event
-    console.log(`[AUDIT] Recovery codes revoked for user ${user.id}. Codes revoked: ${codesRevoked}`);
 
     return NextResponse.json({
       success: true,

@@ -88,7 +88,6 @@ export async function POST(request) {
     const result = await recoveryCodeService.saveCodes(user.id, codeHashes, 365);
 
     // Log audit event
-    console.log(`[AUDIT] Recovery codes generated for user ${user.id}`);
 
     return NextResponse.json({
       success: true,

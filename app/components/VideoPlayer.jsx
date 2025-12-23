@@ -158,7 +158,6 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
         const isMP4 = mimeType?.includes('mp4') || mimeType?.includes('quicktime') || !mimeType;
 
         if (isMP4) {
-          console.log('[Video] MP4 detected, using blob fallback (MediaSource requires fMP4)');
           await loadAllChunks(manifest, key);
           return;
         }
@@ -171,7 +170,6 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
         }
 
         // Fallback: Download and decrypt all chunks
-        console.log('MediaSource not supported, using fallback');
         await loadAllChunks(manifest, key);
 
       } catch (err) {
@@ -187,7 +185,6 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
     // Try MediaSource API for progressive playback
     const tryMediaSource = (manifest, key) => {
       if (!window.MediaSource) {
-        console.log('MediaSource API not available');
         return false;
       }
 
@@ -209,7 +206,6 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
       }
 
       if (!supportedCodec) {
-        console.log('No supported codec found for MediaSource');
         return false;
       }
 
@@ -236,13 +232,11 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
             setIsLoading(false);
             setLoadingStage('Playing');
 
-            console.log('First chunk loaded, starting playback');
 
             // Try autoplay
             try {
               await videoRef.current.play();
             } catch (e) {
-              console.log('Autoplay blocked');
             }
 
             // Load remaining chunks in background
@@ -253,7 +247,6 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
                 const { decrypted } = await fetchAndDecryptChunk(i, key, abortControllerRef.current.signal);
                 await appendToSourceBuffer(sourceBuffer, decrypted);
                 setCurrentChunk(i);
-                console.log(`Chunk ${i}/${total} loaded`);
               } catch (err) {
                 console.warn(`Failed to load chunk ${i}:`, err.message);
               }
@@ -296,14 +289,12 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
         const { decrypted } = await fetchAndDecryptChunk(i, key, abortControllerRef.current.signal);
         decryptedChunks.push(decrypted);
 
-        console.log(`Chunk ${i}/${manifest.totalChunks} decrypted`);
       }
 
       if (cancelled) return;
 
       setLoadingStage('Preparing video...');
       const totalSize = decryptedChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-      console.log(`[Video] Total decrypted size: ${totalSize} bytes (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
 
       const combined = new Uint8Array(totalSize);
       let offset = 0;
@@ -313,21 +304,16 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
         offset += chunk.length;
       }
 
-      console.log(`[Video] Combined buffer ready, offset: ${offset}`);
 
       const blob = new Blob([combined], { type: mimeType || 'video/mp4' });
-      console.log(`[Video] Blob created: ${blob.size} bytes, type: ${blob.type}`);
 
       const url = URL.createObjectURL(blob);
-      console.log(`[Video] Blob URL created: ${url}`);
 
       setVideoSrc(url);
       blobCache.set(fileId, { url, timestamp: Date.now() });
-      console.log(`[Video] Setting videoSrc and caching: ${url}`);
 
       setIsLoading(false);
       setLoadingStage('Ready');
-      console.log(`[Video] Loading complete, video should now play`);
     };
 
     loadVideo();
@@ -424,10 +410,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
             console.error('[Video] Video error message:', videoRef.current?.error?.message);
             setError(`Video playback error: ${videoRef.current?.error?.message || 'Unknown error'}`);
           }}
-          onCanPlay={() => console.log('[Video] Video can play')}
-          onLoadedData={() => console.log('[Video] Video data loaded')}
-          onPlaying={() => console.log('[Video] Video is playing')}
-          onWaiting={() => console.log('[Video] Video is waiting/buffering')}
+          onWaiting={() => {}}
         />
       </div>
 

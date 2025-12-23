@@ -8,10 +8,10 @@ let initialized = false;
 
 /**
  * GET /api/init
- * 
+ *
  * Initialize server-side encryption keys (RSA key pair).
  * This should be called once when the app starts.
- * 
+ *
  * Safe to call multiple times (idempotent).
  */
 export async function GET(request) {
@@ -19,7 +19,6 @@ export async function GET(request) {
     if (!initialized) {
       await rsaKeyManager.init();
       initialized = true;
-      console.log('[INIT] Server initialization complete');
     }
 
     return NextResponse.json({

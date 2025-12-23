@@ -8,17 +8,17 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/auth/reset-master-with-recovery
- * 
+ *
  * Resets the master password using a recovery code.
  * Requires: authenticated user + login password + recovery code
- * 
+ *
  * Request body:
  * {
  *   "loginPassword": "string",
  *   "recoveryCode": "XXXX-XXXX-XXXX-XXXX",
  *   "newMasterPassword": "string"
  * }
- * 
+ *
  * Response:
  * {
  *   "success": true,
@@ -82,8 +82,6 @@ export async function POST(request) {
     const status = await recoveryCodeService.getUserCodeStatus(user.id);
 
     // Log audit event
-    console.log(`[AUDIT] Master password reset using recovery code for user ${user.id}`);
-
     return NextResponse.json({
       success: true,
       message: 'Master password reset successfully',

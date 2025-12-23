@@ -204,11 +204,9 @@ export default function FileLightbox({
 
           // Browser compatibility: .MOV (video/quicktime) often needs to be treated as video/mp4
           if (mimeType === 'video/quicktime') {
-              console.log('[Lightbox] Remapping video/quicktime to video/mp4 for browser compatibility');
               mimeType = 'video/mp4';
           }
 
-          console.log(`[Lightbox] Creating blob with type: ${mimeType}`);
           const finalBlob = new Blob([blob], { type: mimeType });
           return { url: URL.createObjectURL(finalBlob), type: mimeType };
         });
@@ -298,49 +296,31 @@ export default function FileLightbox({
   };
 
   const runDiagnostics = async (file, key, password) => {
-    console.group(`🔍 Decryption Diagnostics for ${file.original_filename}`);
     try {
-      console.log('1. Checking File Metadata...');
-      console.log(`   ID: ${file.id}`);
-      console.log(`   Size: ${file.file_size}`);
-      console.log(`   Mime: ${file.mime_type}`);
-
-      console.log('2. Fetching Part Metadata...');
       const parts = await fetchFilePartMetadata(file.id, shareToken);
-      console.log(`   Total Parts: ${parts.length}`);
 
-      if (parts.length > 0) {
-        const first = parts[0];
-        console.log('3. Inspecting First Chunk...');
-        console.log(`   Part #: ${first.part_number}`);
-        console.log(`   Size: ${first.size} bytes`);
-        console.log(`   IV: ${first.iv ? `Present (${first.iv.length} chars)` : 'MISSING'}`);
-        console.log(`   Auth Tag: ${first.auth_tag ? `Present (${first.auth_tag.length} chars)` : 'MISSING'}`);
+       if (parts.length > 0) {
+         const first = parts[0];
 
-        if (!first.iv || !first.auth_tag) {
-            console.error('❌ CRITICAL: Missing IV or Auth Tag in metadata!');
-        } else {
-            console.log('4. Attempting Single Chunk Decryption...');
-            try {
-                // Use the verify util which tries to decrypt the first chunk
-                const { verifyFileKey } = await import('@/lib/clientDecryption');
-                const success = await verifyFileKey(file, key, parts, !!customKey, password);
-                if (success) {
-                    console.log('✅ Single chunk decryption SUCCESS. Key is correct.');
-                    console.log('   Issue might be with subsequent chunks or memory.');
-                } else {
-                    console.error('❌ Single chunk decryption FAILED. Key/IV/Data mismatch.');
-                }
-            } catch (vErr) {
-                 console.error('❌ Verification Error:', vErr);
-            }
-        }
-      }
-    } catch (dErr) {
-        console.error('Diagnostic failed:', dErr);
-    }
-    console.groupEnd();
-  };
+         if (!first.iv || !first.auth_tag) {
+             console.error('❌ CRITICAL: Missing IV or Auth Tag in metadata!');
+         } else {
+             try {
+                 // Use the verify util which tries to decrypt the first chunk
+                 const { verifyFileKey } = await import('@/lib/clientDecryption');
+                 const success = await verifyFileKey(file, key, parts, !!customKey, password);
+                 if (!success) {
+                     console.error('❌ Single chunk decryption FAILED. Key/IV/Data mismatch.');
+                 }
+             } catch (vErr) {
+                  console.error('❌ Verification Error:', vErr);
+             }
+         }
+       }
+     } catch (dErr) {
+         console.error('Diagnostic failed:', dErr);
+     }
+   };
 
   const handleUnlock = async (e) => {
     e.preventDefault();

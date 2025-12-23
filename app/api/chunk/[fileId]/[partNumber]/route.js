@@ -107,7 +107,6 @@ export async function GET(request, { params }) {
 
       // Fallback to S3
       if (part.backup_storage_id) {
-        console.log(`[CHUNK] Attempting S3 fallback for part ${partNumber} (Backup ID: ${part.backup_storage_id})`);
         try {
           // Dynamic import to avoid circular deps or server-only issues if any
           const { S3StorageProvider } = await import('@/lib/storage/S3StorageProvider');
@@ -125,7 +124,6 @@ export async function GET(request, { params }) {
               // Decrypt with server's private key
               const decrypted = rsaKeyManager.decryptWithPrivate(s3ConfigReencrypted.encrypted_data);
               s3Config = JSON.parse(decrypted);
-              console.log(`[CHUNK] Using personal S3 config from browser (bucket: ${s3Config.bucket})`);
             } catch (decryptErr) {
               console.warn(`[CHUNK] Failed to decrypt personal S3 config from header: ${decryptErr.message}`);
               s3Config = null;
@@ -142,14 +140,12 @@ export async function GET(request, { params }) {
               endpoint: config.s3Endpoint || null,
               storageClass: config.s3StorageClass || 'STANDARD'
             };
-            console.log(`[CHUNK] Using global S3 config (bucket: ${s3Config.bucket})`);
           }
 
           if (s3Config) {
             const backupUrl = await s3Provider.getDownloadUrl(authorizedUserId || file.user_id, part.backup_storage_id, s3Config);
             const backupRes = await fetch(backupUrl);
             if (backupRes.ok) {
-                console.log(`[CHUNK] S3 fallback successful for part ${partNumber}`);
                 telegramResponse = backupRes; // Use backup response
             } else {
                 throw new Error(`S3 HTTP ${backupRes.status}`);
