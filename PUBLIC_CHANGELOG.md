@@ -2,6 +2,21 @@
 
 All user-facing updates and improvements to Telegram Vault.
 
+## [December 23, 2025] - Performance & UI Polish
+
+### ⚡ Performance
+- **Smart CDN Caching** - Encrypted file chunks are now cached by the global edge network, making repeat downloads significantly faster
+- **Optimized Connections** - Database and Queue connections are now more robust in production environments
+
+### 💅 UI Improvements
+- **Preview Progress** - Real-time progress percentage and ETA display when decrypting files
+- **Clearer Actions** - "Preview" and "Download" are now distinct actions on secure shared links
+- **Visual Polish** - Improved contrast and styling for the Unlock Vault modal
+
+### 🐛 Bug Fixes
+- **Progress Tracking** - Fixed an issue where the download progress bar would stay at 0% for large files
+- **Redis Stability** - Resolved connection stability issues in production environments
+
 ## [December 22, 2025] - Recovery Code System (Coming Soon)
 
 ### 🔐 Enhanced Security
