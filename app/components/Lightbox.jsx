@@ -111,6 +111,7 @@ export default function FileLightbox({
       startTimeRef.current = Date.now();
 
       let url = null;
+      let activeMimeType = null;
 
       if (file.is_encrypted) {
         if (!isUnlocked) {
@@ -144,17 +145,25 @@ export default function FileLightbox({
             }
           );
 
-          // Force MIME type for PDF/Audio if needed
-          let mimeType = blob.type;
-          if (file.mime_type?.includes('pdf')) mimeType = 'application/pdf';
+          // Force correct MIME type from metadata
+          let mimeType = file.mime_type || blob.type || 'application/octet-stream';
 
+          // Browser compatibility: .MOV (video/quicktime) often needs to be treated as video/mp4
+          if (mimeType === 'video/quicktime') {
+              console.log('[Lightbox] Remapping video/quicktime to video/mp4 for browser compatibility');
+              mimeType = 'video/mp4';
+          }
+
+          console.log(`[Lightbox] Creating blob with type: ${mimeType}`);
           const finalBlob = new Blob([blob], { type: mimeType });
-          return URL.createObjectURL(finalBlob);
+          return { url: URL.createObjectURL(finalBlob), type: mimeType };
         });
 
         url = entry.url;
+        activeMimeType = entry.type;
       } else {
         url = `/api/download?file_id=${file.id}`;
+        activeMimeType = file.mime_type;
       }
 
       // Create slide based on mime type
@@ -167,7 +176,6 @@ export default function FileLightbox({
       if (isImage) {
         slide = { src: url, type: 'image' };
       } else if (isVideo) {
-        const videoType = file.mime_type === 'video/quicktime' ? 'video/mp4' : file.mime_type;
         slide = {
           type: 'video',
           width: 1280,
@@ -175,13 +183,8 @@ export default function FileLightbox({
           sources: [
             {
               src: url,
-              type: videoType,
+              type: activeMimeType,
             },
-            // Fallback for original type
-            {
-              src: url,
-              type: file.mime_type,
-            }
           ],
         };
       } else if (isAudio) {
