@@ -167,6 +167,7 @@ export default function FileLightbox({
       if (isImage) {
         slide = { src: url, type: 'image' };
       } else if (isVideo) {
+        const videoType = file.mime_type === 'video/quicktime' ? 'video/mp4' : file.mime_type;
         slide = {
           type: 'video',
           width: 1280,
@@ -174,8 +175,13 @@ export default function FileLightbox({
           sources: [
             {
               src: url,
-              type: file.mime_type,
+              type: videoType,
             },
+            // Fallback for original type
+            {
+              src: url,
+              type: file.mime_type,
+            }
           ],
         };
       } else if (isAudio) {
