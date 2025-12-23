@@ -51,21 +51,27 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: 'No file parts found' }, { status: 404 });
     }
 
-    // Return metadata
-    const parts = allParts.map(part => ({
-      part_number: part.part_number,
-      size: Number(part.size),
-      iv: part.iv,
-      auth_tag: part.auth_tag,
-      is_compressed: part.is_compressed
-    }));
-
-    return NextResponse.json({ parts }, {
-      headers: {
-        'Cache-Control': 'private, max-age=300',
-        'Content-Type': 'application/json'
+    // Return parts with file metadata
+    return NextResponse.json({
+      parts: allParts.map(p => ({
+        part_number: parseInt(p.part_number, 10),
+        size: parseInt(p.size, 10),
+        iv: p.iv,
+        auth_tag: p.auth_tag,
+        is_compressed: p.is_compressed || false,
+      })),
+      file: {
+        id: file.id,
+        original_filename: file.original_filename,
+        mime_type: file.mime_type,
+        file_size: file.file_size,
+        is_fragmented: file.is_fragmented || false,  // Include fragmentation status
+        key_data: file.encrypted_file_key ? {
+             encrypted_key: file.encrypted_file_key, // Server stored field name
+             iv: file.key_iv // Server stored field name
+        } : null
       }
-    });
+    }, { status: 200 });
   } catch (err) {
     console.error('Error fetching file parts:', err);
     return NextResponse.json({ error: err.message || 'Failed to fetch file parts' }, { status: 500 });

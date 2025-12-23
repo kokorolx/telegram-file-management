@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import VideoPlayer from './VideoPlayer';
 import { useEncryption } from '../contexts/EncryptionContext';
 import {
     fetchFilePartMetadata,
@@ -163,6 +164,18 @@ export default function FileLightbox({
       setProgress(0);
       setEta(null);
       startTimeRef.current = Date.now();
+
+      // Special handling for Video: Skip full download, use VideoPlayer for streaming
+      if (file.mime_type?.startsWith('video/')) {
+          setSlides([{
+            type: 'custom-video',
+            file: file
+          }]);
+
+          // Track view
+          fetch(`/api/stats/file/${file.id}/view`, { method: 'POST' }).catch(err => console.error(err));
+          return; // finally block will handle setLoading(false)
+      }
 
       let url = null;
       let activeMimeType = null;
@@ -453,7 +466,31 @@ export default function FileLightbox({
           plugins={[Video, Zoom, Slideshow, Thumbnails]}
           portal={{ root: document.body }}
           render={{
-            slide: ({ slide }) => {
+            slide: ({ slide, offset }) => {
+              if (slide.type === 'custom-video') {
+                 // Only render the heavy VideoPlayer if this slide is the current one (offset === 0)
+                 // This prevents pre-loading adjacent videos or duplicate mounts
+                 if (offset !== 0) {
+                    return (
+                        <div className="w-full h-full flex items-center justify-center bg-black/50">
+                             <div className="text-white/50 text-sm">Loading player...</div>
+                        </div>
+                    );
+                 }
+
+                 return (
+                    <div className="w-full h-full flex items-center justify-center bg-black">
+                       <div className="w-full max-w-5xl h-full flex items-center justify-center">
+                          <VideoPlayer
+                             fileId={slide.file.id}
+                             fileName={slide.file.original_filename}
+                             fileSize={slide.file.file_size}
+                             mimeType={slide.file.mime_type}
+                          />
+                       </div>
+                    </div>
+                 );
+              }
               if (slide.type === 'pdf') {
                 return (
                   <div className="w-full h-full flex items-center justify-center">

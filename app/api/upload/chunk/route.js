@@ -18,7 +18,7 @@ const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
  *
  * Receive encrypted file chunk from browser and persist via storage abstraction.
  * Supports dual-upload: Telegram (primary) + S3/R2 (backup).
- * 
+ *
  * IMPORTANT: Files are already encrypted by the browser. The server NEVER decrypts.
  * The server just stores the encrypted bytes in both Telegram and S3.
  * Only the browser (with master password) can decrypt the files.
@@ -55,6 +55,10 @@ export async function POST(request) {
     // Basic Validation
     if (!file_id || !part_number || !total_parts || !encrypted_data || !original_filename) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    if (body.is_fragmented) {
+      console.log(`[API] Received is_fragmented=true for file ${file_id}, part ${part_number}`);
     }
 
     const encryptedBuffer = Buffer.from(encrypted_data, 'base64');

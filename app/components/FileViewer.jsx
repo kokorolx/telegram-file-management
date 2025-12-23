@@ -11,6 +11,7 @@ export default function FileViewer({ file, onClose }) {
   if (!file) return null;
 
   const isVideo = file.mime_type?.startsWith('video/');
+  console.log('🚀🚀🚀 ====== isVideo:', isVideo)
   const fileName = file.original_filename;
 
   return (
@@ -37,6 +38,7 @@ export default function FileViewer({ file, onClose }) {
                   fileId={file.id}
                   fileName={fileName}
                   fileSize={file.file_size}
+                  mimeType={file.mime_type}
                 />
               ) : (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">

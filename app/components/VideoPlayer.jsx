@@ -27,6 +27,8 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
   const [loadingStage, setLoadingStage] = useState('Initializing...');
   const [videoSrc, setVideoSrc] = useState(null);
   const [useMediaSource, setUseMediaSource] = useState(false);
+  const [playbackMode, setPlaybackMode] = useState('initializing'); // initializing, progressive, full-download
+  const [fallbackReason, setFallbackReason] = useState(null);
 
   const videoRef = useRef(null);
   const mediaSourceRef = useRef(null);
@@ -36,42 +38,66 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
 
   // Removed local key derivation - using EncryptionContext
 
+  const [mediaSourceUrl, setMediaSourceUrl] = useState(null);
+
   // Ref to store parts metadata for chunk lookups
   const partsRef = useRef([]);
 
 
 
+  // Ref to track in-flight requests for deduplication
+  const fetchingRef = useRef(new Map());
+
   // Fetch and decrypt a single chunk from API endpoint
    const fetchAndDecryptChunk = useCallback(async (chunkNum, key, signal) => {
-     // Find metadata for this chunk
-     const part = partsRef.current.find(p => p.part_number === chunkNum);
-     if (!part) throw new Error(`Metadata missing for chunk ${chunkNum}`);
+      // Deduplication: Return existing promise if already fetching this chunk
+      if (fetchingRef.current.has(chunkNum)) {
+          console.log(`[VideoPlayer] Reusing in-flight request for chunk ${chunkNum}`);
+          return fetchingRef.current.get(chunkNum);
+      }
 
-     // Fetch raw encrypted chunk
-     const response = await fetch(
-       `/api/chunk/${encodeURIComponent(fileId)}/${chunkNum}`,
-       { signal }
-     );
+      const fetchPromise = (async () => {
+          try {
+              // Find metadata for this chunk
+              const part = partsRef.current.find(p => p.part_number === chunkNum);
+              if (!part) throw new Error(`Metadata missing for chunk ${chunkNum}`);
 
-     if (!response.ok) {
-       const data = await response.json().catch(() => ({}));
-       throw new Error(`Failed to fetch chunk ${chunkNum}: ${data.error || response.status}`);
-     }
+              console.log(`[VideoPlayer] Network Fetch: Chunk ${chunkNum}`);
 
-     const encryptedBuffer = await response.arrayBuffer();
-     const iv = new Uint8Array(part.iv.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-     const authTag = new Uint8Array(part.auth_tag.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+              // Fetch raw encrypted chunk
+              const response = await fetch(
+                `/api/chunk/${encodeURIComponent(fileId)}/${chunkNum}`,
+                { signal }
+              );
 
-     // Use centralized decryption utility (correctly handles CryptoKey import)
-     const decrypted = await decryptChunkBrowser(
-       new Uint8Array(encryptedBuffer),
-       key,
-       iv,
-       authTag
-     );
+              if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(`Failed to fetch chunk ${chunkNum}: ${data.error || response.status}`);
+              }
 
-     return { decrypted, total: partsRef.current.length };
-   }, [fileId]);
+              const encryptedBuffer = await response.arrayBuffer();
+              const iv = new Uint8Array(part.iv.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+              const authTag = new Uint8Array(part.auth_tag.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+
+              // Use centralized decryption utility (correctly handles CryptoKey import)
+              const decrypted = await decryptChunkBrowser(
+                new Uint8Array(encryptedBuffer),
+                key,
+                iv,
+                authTag
+              );
+
+              return { decrypted, total: partsRef.current.length };
+          } finally {
+              if (fetchingRef.current.get(chunkNum) === fetchPromise) {
+                  fetchingRef.current.delete(chunkNum);
+              }
+          }
+      })();
+
+      fetchingRef.current.set(chunkNum, fetchPromise);
+      return fetchPromise;
+    }, [fileId]);
 
   // Append to MediaSource buffer with queue handling
   const appendToSourceBuffer = useCallback((sourceBuffer, data) => {
@@ -94,7 +120,9 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
       const onError = (e) => {
         sourceBuffer.removeEventListener('updateend', onUpdateEnd);
         sourceBuffer.removeEventListener('error', onError);
-        reject(new Error('SourceBuffer error'));
+        // Capture the actual error message from the SourceBuffer error event
+        const errorMsg = sourceBuffer.error?.message || 'SourceBuffer error';
+        reject(new Error(errorMsg));
       };
 
       sourceBuffer.addEventListener('updateend', onUpdateEnd);
@@ -128,8 +156,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
             return;
         }
 
-        const key = encryptionKey;
-        decryptionKeyRef.current = key;
+        const masterKey = encryptionKey; // This is the user's derived master key
 
         if (cancelled) return;
 
@@ -148,77 +175,142 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
          partsRef.current = partsData.parts;
          setTotalChunks(totalChunks);
 
+         // Helper to unwrap file key if envelope encryption is used
+         let fileKey = masterKey;
+         if (partsData.file?.key_data) {
+             setLoadingStage('Unwrapping file key...');
+             try {
+                 const { unwrapKey } = await import('@/lib/envelopeCipher');
+                 const { encrypted_key, iv } = partsData.file.key_data;
+                 // unwrapKey(wrappedKeyBase64, keyMaterial, salt, ivHex)
+                 fileKey = await unwrapKey(encrypted_key, masterKey, null, iv);
+                 console.log('[VideoPlayer] Successfully unwrapped DEK for file');
+             } catch (err) {
+                 console.error('[VideoPlayer] Failed to unwrap DEK:', err);
+                 throw new Error(`Failed to unlock file key: ${err.message}`);
+             }
+         }
+         decryptionKeyRef.current = fileKey;
+         const key = fileKey;
+
          // Create manifest-like object for compatibility
          const manifest = { totalChunks, parts: partsData.parts };
 
         if (cancelled) return;
 
-        // For MP4 files, skip MediaSource since most are not fragmented (fMP4)
-        // MediaSource API only works with fragmented MP4 or WebM
-        const isMP4 = mimeType?.includes('mp4') || mimeType?.includes('quicktime') || !mimeType;
+        // Check if video is fragmented for progressive playback
+        // Use metadata from API as the single source of truth
+        const actualMimeType = partsData.file?.mime_type || mimeType;
+        const isMP4 = actualMimeType?.includes('mp4') || actualMimeType?.includes('quicktime') || !actualMimeType;
+        const isFragmented = partsData.file?.is_fragmented === true;
 
-        if (isMP4) {
+        console.log('[VideoPlayer] Playback diagnostic:', {
+          isMP4,
+          isFragmented,
+          mimeType: actualMimeType,
+          fileName,
+          totalChunks
+        });
+
+        // For non-fragmented MP4/MOV, download all chunks first
+        // MediaSource API only works with fragmented MP4/MOV or WebM
+        if (isMP4 && !isFragmented) {
+          console.log('[VideoPlayer] Using Full Download: Video is not fragmented.');
+          setPlaybackMode('full-download');
+          setFallbackReason('Video not fragmented');
           await loadAllChunks(manifest, key);
           return;
         }
 
-        // For WebM, try MediaSource for progressive playback
+        // For WebM or fragmented MP4/MOV, try MediaSource for progressive playback
+        console.log('[VideoPlayer] Attempting MediaSource API setup...');
         const canUseMediaSource = tryMediaSource(manifest, key);
+
         if (canUseMediaSource) {
+          console.log('[VideoPlayer] MediaSource API initialized successfully.');
           setUseMediaSource(true);
+          setPlaybackMode('progressive');
           return;
         }
 
         // Fallback: Download and decrypt all chunks
+        console.warn('[VideoPlayer] MediaSource not supported or initialization failed. Falling back to Full Download.');
+        setPlaybackMode('full-download');
+        // fallbackReason is set inside tryMediaSource on failure
         await loadAllChunks(manifest, key);
 
       } catch (err) {
         if (err.name === 'AbortError') return;
-        console.error('Video load error:', err);
-        if (!cancelled) {
-          setError(err.message);
-          setIsLoading(false);
-        }
+        console.error('[VideoPlayer] FATAL ERROR during loadVideo:', err);
+        setError(`Playback failed: ${err.message}`);
       }
     };
 
-    // Try MediaSource API for progressive playback
+    /**
+     * Try to setup MediaSource API for progressive playback
+     */
     const tryMediaSource = (manifest, key) => {
-      if (!window.MediaSource) {
+      if (typeof window === 'undefined' || !window.MediaSource) {
+        console.warn('[VideoPlayer] MediaSource API not available in this browser.');
+        setFallbackReason('MediaSource API unsupported');
         return false;
       }
 
       // Check codec support
+      // Try to be more inclusive to find ANY supported format
       const codecs = [
-        'video/mp4; codecs="avc1.42E01E, mp4a.40.2"',
-        'video/mp4; codecs="avc1.4D401E, mp4a.40.2"',
-        'video/mp4; codecs="avc1.64001E, mp4a.40.2"',
-        'video/webm; codecs="vp8, vorbis"',
+        'video/mp4; codecs="avc1.640029, mp4a.40.2"', // High Profile Level 4.1 (Common)
+        'video/mp4; codecs="avc1.640028, mp4a.40.2"', // High Profile Level 4.0
+        'video/mp4; codecs="avc1.4D4029, mp4a.40.2"', // Main Profile Level 4.1
+        'video/mp4; codecs="avc1.4D4028, mp4a.40.2"', // Main Profile Level 4.0
+        'video/mp4; codecs="avc1.42E01E, mp4a.40.2"', // Baseline
+        'video/mp4; codecs="avc1.64001E, mp4a.40.2"', // High
+        'video/mp4; codecs="avc1.4D401E, mp4a.40.2"', // Main
+        'video/mp4; codecs="hvc1.1.6.L93.B0, mp4a.40.2"', // HEVC Main
+        'video/mp4; codecs="hev1.1.6.L93.B0, mp4a.40.2"', // HEVC Main (Apple)
+        'video/mp4', // Generic fallback
         'video/webm; codecs="vp9, opus"',
+        'video/webm; codecs="vp8, vorbis"',
+        'video/webm',
       ];
 
       let supportedCodec = null;
       for (const codec of codecs) {
         if (MediaSource.isTypeSupported(codec)) {
           supportedCodec = codec;
+          console.log(`[VideoPlayer] Browser supports codec: ${codec}`);
           break;
         }
       }
 
       if (!supportedCodec) {
+        console.warn('[VideoPlayer] No compatible codecs found for MediaSource.');
+        setFallbackReason('No compatible codec found');
         return false;
       }
 
       try {
         const mediaSource = new MediaSource();
         mediaSourceRef.current = mediaSource;
-        videoRef.current.src = URL.createObjectURL(mediaSource);
+        const msUrl = URL.createObjectURL(mediaSource);
+        setMediaSourceUrl(msUrl);
+        // We still set it manually to be safe, but state-driven src is primary now
+        if (videoRef.current) videoRef.current.src = msUrl;
 
         mediaSource.addEventListener('sourceopen', async () => {
           if (cancelled) return;
 
           try {
-            const sourceBuffer = mediaSource.addSourceBuffer(supportedCodec);
+            let sourceBuffer;
+             try {
+               sourceBuffer = mediaSource.addSourceBuffer(supportedCodec);
+             } catch (e) {
+                console.warn('[VideoPlayer] addSourceBuffer failed for preferred codec, trying video-only:', e);
+                // Try video only as immediate fallback if first add fails
+                const videoOnlyCodec = supportedCodec.replace(', mp4a.40.2', '').replace(', opus', '').replace(', vorbis', '');
+                sourceBuffer = mediaSource.addSourceBuffer(videoOnlyCodec);
+             }
+
             sourceBufferRef.current = sourceBuffer;
 
             // Load first chunk immediately
@@ -227,7 +319,58 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
 
             if (cancelled) return;
 
-            await appendToSourceBuffer(sourceBuffer, decrypted);
+            try {
+                await appendToSourceBuffer(sourceBuffer, decrypted);
+            } catch (err) {
+                 // Specific Error Handling for Audio Mismatch (common with screen recordings)
+                 if (err.message && (err.message.includes('aac track') || err.message.includes('audio track') || err.message.includes('Initialization segment misses expected') || err.message.includes('CHUNK_DEMUXER'))) {
+                     console.warn('[VideoPlayer] Audio track mismatch detected. Retrying with video-only codec...');
+
+                     // Clean up bad buffer - wait for state to settle
+                     if (sourceBuffer.updating) {
+                       await new Promise(r => sourceBuffer.addEventListener('updateend', r, { once: true }));
+                     }
+                     try { 
+                       mediaSource.removeSourceBuffer(sourceBuffer); 
+                     } catch(e) {
+                       console.warn('[VideoPlayer] Failed to remove sourceBuffer:', e);
+                     }
+
+                     // Create new buffer without audio codec
+                     const videoOnlyCodec = supportedCodec.replace(/, mp4a\.40\.2/g, '').replace(/, opus/g, '').replace(/, vorbis/g, '');
+                     console.log(`[VideoPlayer] Switching to video-only codec: ${videoOnlyCodec}`);
+
+                     sourceBuffer = mediaSource.addSourceBuffer(videoOnlyCodec);
+                     sourceBufferRef.current = sourceBuffer;
+
+                     await appendToSourceBuffer(sourceBuffer, decrypted);
+                     console.log('[VideoPlayer] Successfully recovered with video-only codec');
+                 } else {
+                     throw err; // Re-throw other errors
+                 }
+            }
+
+            // DIAGNOSTIC EXTREME: Log first 16 bytes to check for ftyp/moov (valid MP4)
+            const headerBytes = Array.from(decrypted.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+            console.log(`[VideoPlayer] Decrypted Header (Hex): ${headerBytes}`);
+
+            // DIAGNOSTIC: Check what actually happened after append
+            if (videoRef.current) {
+              const buffered = videoRef.current.buffered;
+              const ranges = [];
+              for(let i=0; i<buffered.length; i++) {
+                ranges.push(`[${buffered.start(i).toFixed(2)}s - ${buffered.end(i).toFixed(2)}s]`);
+              }
+              console.log(`[VideoPlayer] Post-append state:`, {
+                readyState: videoRef.current.readyState,
+                paused: videoRef.current.paused,
+                error: videoRef.current.error,
+                buffered: ranges.join(', '),
+                currentTime: videoRef.current.currentTime
+              });
+            }
+
+            console.log(`[VideoPlayer] Successfully appended first chunk (${decrypted.length} bytes). Total parts: ${totalChunks}`);
             setCurrentChunk(1);
             setIsLoading(false);
             setLoadingStage('Playing');
@@ -236,7 +379,9 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
             // Try autoplay
             try {
               await videoRef.current.play();
+              console.log('[VideoPlayer] Playback started successfully');
             } catch (e) {
+              console.warn('[VideoPlayer] Autoplay failed:', e.message);
             }
 
             // Load remaining chunks in background
@@ -263,7 +408,9 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
           } catch (err) {
             console.error('MediaSource error:', err);
             // Fallback
-            URL.revokeObjectURL(videoRef.current.src);
+            if (videoRef.current && videoRef.current.src) {
+                URL.revokeObjectURL(videoRef.current.src);
+            }
             mediaSourceRef.current = null;
             loadAllChunks(manifest, key);
           }
@@ -272,6 +419,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
         return true;
       } catch (err) {
         console.error('MediaSource setup failed:', err);
+        setFallbackReason(`MSE Setup Failed: ${err.message}`);
         return false;
       }
     };
@@ -325,6 +473,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
         try { mediaSourceRef.current.endOfStream(); } catch (e) {}
       }
       if (videoSrc) URL.revokeObjectURL(videoSrc);
+      if (mediaSourceUrl) URL.revokeObjectURL(mediaSourceUrl);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileId, encryptionKey, masterPassword, mimeType, fetchAndDecryptChunk, appendToSourceBuffer]);
@@ -398,7 +547,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
         {/* Video element */}
         <video
           ref={videoRef}
-          src={useMediaSource ? undefined : videoSrc}
+          src={useMediaSource ? mediaSourceUrl : videoSrc}
           controls
           autoPlay
           playsInline
@@ -435,10 +584,15 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
         <div className="text-sm text-gray-600">
           <p className="truncate font-medium">{fileName}</p>
           <p className="text-xs text-gray-500">
-            {(fileSize / 1024 / 1024).toFixed(1)} MB
+            {useMediaSource ? (
+              <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded-md font-bold">Progressive</span>
+            ) : (
+              <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md font-bold">
+                Full Download {fallbackReason && `(${fallbackReason})`}
+              </span>
+            )}
             {totalChunks > 0 && ` • ${totalChunks} chunks`}
             {!isLoading && ' • Decrypted locally'}
-            {useMediaSource && ' • Progressive'}
           </p>
         </div>
       )}
