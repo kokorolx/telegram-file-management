@@ -29,6 +29,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
   const [useMediaSource, setUseMediaSource] = useState(false);
   const [playbackMode, setPlaybackMode] = useState('initializing'); // initializing, progressive, full-download
   const [fallbackReason, setFallbackReason] = useState(null);
+  const [isSeekBuffering, setIsSeekBuffering] = useState(false); // Track on-demand seek loading
 
   const videoRef = useRef(null);
    const mediaSourceRef = useRef(null);
@@ -36,6 +37,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
    const abortControllerRef = useRef(null);
    const decryptionKeyRef = useRef(null);
    const backgroundLoaderRef = useRef(null);
+   const backgroundLoaderStateRef = useRef({ nextChunkToLoad: 0, paused: false });
 
   // Removed local key derivation - using EncryptionContext
 
@@ -47,6 +49,10 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
 
   // Ref to track in-flight requests for deduplication
   const fetchingRef = useRef(new Map());
+  
+  // Ref to track the last time range was removed (for windowing)
+  // When chunks are removed, we need to re-fetch them even if they were previously buffered
+  const lastRemovedTimeRef = useRef(0);
 
   // Fetch and decrypt a single chunk from API endpoint
    const fetchAndDecryptChunk = useCallback(async (chunkNum, key, signal) => {
@@ -264,39 +270,75 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
   }, []);
 
   // Load chunks on-demand (when user seeks or buffer runs low)
-   // CRITICAL: Load all chunks FIRST, then append in order. This prevents timestamp/sync issues.
-   const loadChunksOnDemand = useCallback(async (startChunk, endChunk, key) => {
-     if (!sourceBufferRef.current || !mediaSourceRef.current) return;
-     
-     console.log(`[VideoPlayer] On-demand loading chunks ${startChunk}-${endChunk}`);
-     
-     // Step 1: Fetch ALL chunks first (prevents out-of-order issues)
+  // CRITICAL: When appending non-contiguous chunks (gap-filling after seek):
+  // 1. Use setTimestampOffset() to position chunks at correct timeline location
+  // 2. This tells the demuxer where samples belong in the video timeline
+  // 3. Without this, chunks 5+ get rejected because timestamps don't align
+  // WINDOW: Only fetch chunks in [startChunk, endChunk] range to avoid OOM when seeking into removed regions
+  const loadChunksOnDemand = useCallback(async (startChunk, endChunk, key, isFragmented = true) => {
+    if (!sourceBufferRef.current || !mediaSourceRef.current) {
+      console.log(`[VideoPlayer] loadChunksOnDemand: sourceBuffer or mediaSource not ready`);
+      return Promise.resolve();
+    }
+    
+    console.log(`[VideoPlayer] On-demand loading chunks ${startChunk}-${endChunk} (fragmented=${isFragmented})`);
+    
+    // Build list of chunks to fetch (never re-append init segment - it's already in buffer)
+    const chunksToFetch = [];
+    
+    // Add requested chunks to fetch list
+    for (let i = startChunk; i <= endChunk; i++) {
+      chunksToFetch.push(i);
+    }
+    
+    console.log(`[VideoPlayer] FETCH PLAN: Will fetch ${chunksToFetch.length} chunks: [${chunksToFetch.join(', ')}]`);
+    
+    // Step 1: Fetch ALL chunks first (prevents out-of-order issues)
      const chunksToAppend = [];
-     for (let i = startChunk; i <= endChunk; i++) {
-       if (abortControllerRef.current?.signal.aborted) {
-         console.log(`[VideoPlayer] On-demand load cancelled at chunk ${i}`);
-         return;
-       }
-       
-       try {
-         // Check if already buffered
-         const buffered = videoRef.current?.buffered;
-         if (buffered && buffered.length > 0) {
-           // Rough check: if we have any buffered content, skip
-           if (videoRef.current.duration && buffered.end(buffered.length - 1) > (i / totalChunksRef.current) * videoRef.current.duration) {
-             console.log(`[VideoPlayer] Chunk ${i} likely already buffered, skipping`);
-             continue;
-           }
-         }
-         
-         console.log(`[VideoPlayer] On-demand fetching chunk ${i}...`);
-         const { decrypted } = await fetchAndDecryptChunk(i, key, abortControllerRef.current.signal);
-         chunksToAppend.push({ chunkNum: i, decrypted });
-       } catch (err) {
-         console.error(`[VideoPlayer] On-demand fetch failed for chunk ${i}:`, err.message);
-         // Continue fetching remaining chunks
-       }
-     }
+     for (const chunkNum of chunksToFetch) {
+        if (abortControllerRef.current?.signal.aborted) {
+          console.log(`[VideoPlayer] On-demand load cancelled at chunk ${chunkNum}`);
+          return;
+        }
+        
+        try {
+          // Check if chunk is already buffered
+          // CRITICAL: Only fetch chunks in the requested [startChunk, endChunk] window
+          // This prevents OOM when seeking into removed regions - we fetch a small window around the seek target
+          const buffered = videoRef.current?.buffered;
+          if (buffered && buffered.length > 0) {
+            const chunkEstimatedTime = (chunkNum / totalChunksRef.current) * videoRef.current.duration;
+            const bufferedStart = buffered.start(0);
+            const bufferedEnd = buffered.end(buffered.length - 1);
+            
+            // LOGIC:
+            // 1. If chunk is in current buffered range [bufferedStart, bufferedEnd] -> SKIP
+            // 2. If chunk is in removed region (before bufferedStart) AND in requested window [startChunk, endChunk] -> FETCH
+            // 3. If chunk is past buffer AND in requested window -> FETCH
+            
+            if (chunkEstimatedTime >= bufferedStart && chunkEstimatedTime <= bufferedEnd) {
+              // Chunk is already buffered - safe to skip
+              console.log(`[VideoPlayer] Chunk ${chunkNum} SKIP (already buffered): chunkTime=${chunkEstimatedTime.toFixed(2)}s in [${bufferedStart.toFixed(2)}s, ${bufferedEnd.toFixed(2)}s]`);
+              continue;
+            } else if (chunkEstimatedTime < bufferedStart) {
+              // Chunk is in removed region - ONLY fetch if within requested window [startChunk, endChunk]
+              console.log(`[VideoPlayer] Chunk ${chunkNum} FETCH (in removed region, within request window): chunkTime=${chunkEstimatedTime.toFixed(2)}s < bufferedStart=${bufferedStart.toFixed(2)}s`);
+            } else {
+              // Chunk is past current buffer - FETCH
+              console.log(`[VideoPlayer] Chunk ${chunkNum} FETCH (past buffer): chunkTime=${chunkEstimatedTime.toFixed(2)}s > bufferedEnd=${bufferedEnd.toFixed(2)}s`);
+            }
+          } else {
+            console.log(`[VideoPlayer] Chunk ${chunkNum} FETCH (no buffered ranges)`);
+          }
+          
+          console.log(`[VideoPlayer] On-demand fetching chunk ${chunkNum}...`);
+          const { decrypted } = await fetchAndDecryptChunk(chunkNum, key, abortControllerRef.current.signal);
+          chunksToAppend.push({ chunkNum, decrypted });
+        } catch (err) {
+          console.error(`[VideoPlayer] On-demand fetch failed for chunk ${chunkNum}:`, err.message);
+          // Continue fetching remaining chunks
+        }
+      }
      
      // Step 2: Append all fetched chunks in order
      if (chunksToAppend.length === 0) {
@@ -305,6 +347,23 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
      }
      
      console.log(`[VideoPlayer] Fetched ${chunksToAppend.length} chunks, appending in order...`);
+     
+     // CRITICAL FOR GAP-FILLING: Detect if we're filling a gap and set timestampOffset
+     // Each chunk nominally represents (duration / totalChunks) seconds
+     // If we're appending chunk 5+ with a gap, we need to tell the demuxer where chunk 5's timeline starts
+     const secondsPerChunk = mediaSourceRef.current.duration / totalChunksRef.current;
+     let offsetApplied = false;
+     
+     // Check if FIRST chunk in sequence has a gap
+     const firstChunk = chunksToAppend[0]?.chunkNum;
+     let needsOffset = false;
+     if (firstChunk && firstChunk > 2 && isFragmented) {
+       const buffered = videoRef.current?.buffered;
+       const hasGap = !buffered || buffered.length === 0 || 
+                     ((firstChunk / totalChunksRef.current) * mediaSourceRef.current.duration) > 
+                     buffered.end(buffered.length - 1);
+       needsOffset = hasGap;
+     }
      
      for (const { chunkNum, decrypted } of chunksToAppend) {
        if (abortControllerRef.current?.signal.aborted) {
@@ -324,6 +383,20 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
            await new Promise(r => sourceBufferRef.current.addEventListener('updateend', r, { once: true }));
          }
          
+         // CRITICAL: For gap chunks (not contiguous with existing buffer)
+         // Set timestampOffset ONCE before appending first gap chunk
+         // This offsets ALL samples in the moof/mdat boxes that follow
+         if (!offsetApplied && needsOffset && chunkNum > 2) {
+           // Chunk 1 = init segment (not in timeline)
+           // Chunk 2 = first media (timeline 0s)
+           // Chunk N = (N-2) * secondsPerChunk
+           const chunkStartTime = (chunkNum - 2) * secondsPerChunk;
+           console.log(`[VideoPlayer] *** GAP-FILL CHUNK ${chunkNum} *** Setting timestampOffset=${chunkStartTime.toFixed(2)}s`);
+           sourceBufferRef.current.timestampOffset = chunkStartTime;
+           offsetApplied = true;
+         }
+         
+         console.log(`[VideoPlayer] Appending chunk ${chunkNum} (${decrypted.length} bytes)${sourceBufferRef.current.timestampOffset > 0 ? ` @ timestampOffset=${sourceBufferRef.current.timestampOffset.toFixed(2)}s` : ''}...`);
          await appendToSourceBuffer(sourceBufferRef.current, decrypted);
          setCurrentChunk(chunkNum);
          console.log(`[VideoPlayer] On-demand appended chunk ${chunkNum}`);
@@ -337,6 +410,12 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
            return;
          }
        }
+     }
+     
+     // Reset timestamp offset after gap-fill sequence completes
+     if (offsetApplied && sourceBufferRef.current) {
+       sourceBufferRef.current.timestampOffset = 0;
+       console.log(`[VideoPlayer] Reset timestampOffset to 0 after gap-fill`);
      }
      
      console.log(`[VideoPlayer] On-demand load completed`);
@@ -670,9 +749,17 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
               
               console.log(`[VideoPlayer] Starting continuous background load (max ${MAX_CHUNKS_AHEAD} chunks ahead)`);
               
+              backgroundLoaderStateRef.current.nextChunkToLoad = nextChunkToLoad;
+              
               const backgroundLoader = setInterval(async () => {
                 if (cancelled || allChunksLoaded) {
                   clearInterval(backgroundLoader);
+                  return;
+                }
+                
+                // CRITICAL: Skip background load if seek is in progress
+                if (backgroundLoaderStateRef.current.paused) {
+                  console.log(`[VideoPlayer] Background loader paused during seek`);
                   return;
                 }
                 
@@ -688,6 +775,25 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
                   const bufferedAhead = bufferedEnd - currentTime;
                   const secondsPerChunk = totalDuration / total;
                   const chunksAhead = Math.ceil(bufferedAhead / secondsPerChunk);
+                  
+                  // WINDOWING: Remove chunks older than (currentTime - 5 minutes)
+                  // This prevents unbounded memory growth while keeping recent chunks for backward seeking
+                  const LOOKBACK_WINDOW = 300; // 5 minutes in seconds
+                  const removeUpToTime = Math.max(0, currentTime - LOOKBACK_WINDOW);
+                  
+                  if (removeUpToTime > 0 && buffered.length > 0) {
+                    try {
+                      // Only remove if sourceBuffer is not updating
+                      if (!sourceBuffer.updating) {
+                        console.log(`[VideoPlayer] Windowing: Removing chunks before ${removeUpToTime.toFixed(2)}s (current playhead: ${currentTime.toFixed(2)}s)`);
+                        sourceBuffer.remove(0, removeUpToTime);
+                        // Track the removed time range so we know to re-fetch chunks seeking into it
+                        lastRemovedTimeRef.current = removeUpToTime;
+                      }
+                    } catch (removeErr) {
+                      console.warn(`[VideoPlayer] Windowing remove failed (may be expected):`, removeErr.message);
+                    }
+                  }
                   
                   // If we have less than MAX_CHUNKS_AHEAD, load more
                   if (chunksAhead < MAX_CHUNKS_AHEAD && nextChunkToLoad <= total) {
@@ -880,8 +986,8 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
       )}
 
       <div className="bg-black rounded-lg overflow-hidden relative min-h-[300px]">
-        {/* Loading overlay */}
-        {isLoading && (
+        {/* Loading overlay - only show during initial load, not during seek buffering */}
+        {isLoading && !isSeekBuffering && (
           <div className="absolute inset-0 bg-gradient-to-b from-gray-900 to-black flex flex-col items-center justify-center z-10">
             <div className="relative mb-6">
               <div className="animate-spin h-16 w-16 border-4 border-blue-500/30 border-t-blue-500 rounded-full"></div>
@@ -956,6 +1062,12 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
               const buffered = videoRef.current.buffered;
               const totalDuration = mediaSourceRef.current.duration;
               
+              // DEBUG: Log seek info
+              console.log(`[VideoPlayer] SEEK DEBUG: seekTime=${seekTime.toFixed(2)}s, totalDuration=${totalDuration.toFixed(2)}s, totalChunks=${totalChunksRef.current}, bufferedRanges=${buffered.length}`);
+              for (let i = 0; i < buffered.length; i++) {
+                console.log(`  [${i}] buffered: ${buffered.start(i).toFixed(2)}s - ${buffered.end(i).toFixed(2)}s`);
+              }
+              
               // Validate duration before calculations
               if (!totalDuration || totalDuration <= 0 || !isFinite(totalDuration)) {
                 console.warn(`[VideoPlayer] Invalid duration for seek: ${totalDuration}`);
@@ -970,7 +1082,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
               for (let i = 0; i < buffered.length; i++) {
                 if (clampedSeekTime >= buffered.start(i) && clampedSeekTime <= buffered.end(i)) {
                   isBuffered = true;
-                  console.log(`[VideoPlayer] Seek to ${clampedSeekTime.toFixed(2)}s is buffered`);
+                  console.log(`[VideoPlayer] Seek to ${clampedSeekTime.toFixed(2)}s is already buffered`);
                   break;
                 }
               }
@@ -979,36 +1091,95 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
                 // Calculate which chunks we need to load to cover the seek gap
                 // Use time-based calculation: each chunk covers (duration / totalChunks) seconds
                 const secondsPerChunk = totalDuration / totalChunksRef.current;
+                console.log(`[VideoPlayer] SEEK CALC: secondsPerChunk=${secondsPerChunk.toFixed(2)}s`);
                 
                 // Estimated chunk at seek position
                 const estimatedChunk = Math.max(2, Math.ceil(clampedSeekTime / secondsPerChunk));
+                console.log(`[VideoPlayer] SEEK CALC: seekTime=${clampedSeekTime.toFixed(2)}s / secondsPerChunk=${secondsPerChunk.toFixed(2)}s = estimatedChunk=${estimatedChunk}`);
                 
-                // Find the last contiguous buffered chunk
-                let lastBufferedChunk = 1;
-                if (buffered.length > 0) {
-                  const bufferedEnd = buffered.end(buffered.length - 1);
-                  lastBufferedChunk = Math.max(1, Math.ceil(bufferedEnd / secondsPerChunk));
+                // Get current buffer bounds
+                const bufferedStart = buffered.length > 0 ? buffered.start(0) : totalDuration;
+                const bufferedEnd = buffered.length > 0 ? buffered.end(buffered.length - 1) : 0;
+                const lastBufferedChunk = Math.max(1, Math.ceil(bufferedEnd / secondsPerChunk));
+                
+                console.log(`[VideoPlayer] SEEK CALC: bufferedStart=${bufferedStart.toFixed(2)}s, bufferedEnd=${bufferedEnd.toFixed(2)}s, lastBufferedChunk=${lastBufferedChunk}`);
+                
+                let startChunk, endChunk;
+                
+                // CRITICAL: Detect if seeking BACKWARD into removed region or FORWARD into new region
+                if (clampedSeekTime < bufferedStart) {
+                  // Seeking BACKWARD - into windowed-out (removed) area
+                  // Re-fetch the removed chunks
+                  startChunk = Math.max(2, estimatedChunk - 2);  // Load 2 chunks before target
+                  endChunk = Math.min(estimatedChunk + 2, totalChunksRef.current);
+                  console.log(`[VideoPlayer] *** BACKWARD SEEK *** Seeking into REMOVED region: fetch chunks ${startChunk}-${endChunk}`);
+                  
+                } else if (clampedSeekTime > bufferedEnd) {
+                  // Seeking FORWARD - past current buffer
+                  startChunk = Math.max(2, lastBufferedChunk + 1);
+                  endChunk = Math.min(estimatedChunk + 2, totalChunksRef.current);
+                  console.log(`[VideoPlayer] *** FORWARD SEEK *** Seeking past current buffer: fetch chunks ${startChunk}-${endChunk}`);
+                  
+                } else {
+                  // Should not happen (already checked isBuffered above)
+                  console.warn(`[VideoPlayer] Seek target claims not buffered but is within range`);
+                  return;
                 }
                 
-                const startChunk = Math.max(2, lastBufferedChunk + 1);
-                const endChunk = Math.min(estimatedChunk + 2, totalChunksRef.current); // Get seek target + 2 buffer chunks
+                console.log(`[VideoPlayer] *** SEEKING TO ${clampedSeekTime.toFixed(2)}s *** WILL FETCH CHUNKS: ${startChunk}-${endChunk} (${endChunk - startChunk + 1} chunks)`);
                 
-                console.log(`[VideoPlayer] Seek to ${clampedSeekTime.toFixed(2)}s (unbuffered). Last buffered: chunk ${lastBufferedChunk}, seek target: chunk ${estimatedChunk}, loading: ${startChunk}-${endChunk}`);
-                
-                // Load chunks asynchronously without blocking playback
+                // Load chunks and track completion
                 if (decryptionKeyRef.current && abortControllerRef.current && !abortControllerRef.current.signal.aborted) {
-                  // Use Promise to avoid blocking (don't await here)
-                  loadChunksOnDemand(startChunk, endChunk, decryptionKeyRef.current)
-                    .catch(err => console.error(`[VideoPlayer] Seek-triggered on-demand load failed:`, err.message));
+                  setIsSeekBuffering(true);
+                  
+                  // CRITICAL: Pause background loader during seek to prevent OOM
+                  backgroundLoaderStateRef.current.paused = true;
+                  console.log(`[VideoPlayer] Pausing background loader during seek`);
+                  
+                  // Pass isFragmented=true to ensure proper timestampOffset handling for gap-fill
+                  loadChunksOnDemand(startChunk, endChunk, decryptionKeyRef.current, true)
+                    .then(() => {
+                      // Chunks loaded successfully, try to play
+                      console.log(`[VideoPlayer] Seek-load completed, attempting to play...`);
+                      if (videoRef.current && videoRef.current.paused) {
+                        videoRef.current.play().catch(err => console.warn(`[VideoPlayer] Play after seek failed:`, err.message));
+                      }
+                      setIsSeekBuffering(false);
+                      // Resume background loader after seek completes
+                      backgroundLoaderStateRef.current.paused = false;
+                      console.log(`[VideoPlayer] Resuming background loader after seek`);
+                    })
+                    .catch(err => {
+                      console.error(`[VideoPlayer] Seek-triggered on-demand load failed:`, err.message);
+                      setIsSeekBuffering(false);
+                      // Resume background loader on error too
+                      backgroundLoaderStateRef.current.paused = false;
+                      console.log(`[VideoPlayer] Resuming background loader after seek error`);
+                    });
                 }
+              } else {
+                // Seek target is already buffered, just allow playback to resume
+                console.log(`[VideoPlayer] Seek to ${clampedSeekTime.toFixed(2)}s is already buffered, no fetch needed`);
               }
             }
           }}
         />
       </div>
 
+      {/* Seek buffering indicator */}
+      {isSeekBuffering && (
+        <div className="space-y-1 mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex justify-between items-center text-xs text-blue-600">
+            <span>⏳ Loading seek position...</span>
+          </div>
+          <div className="h-1 bg-blue-200 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 animate-pulse" style={{ width: '100%' }} />
+          </div>
+        </div>
+      )}
+
       {/* Buffering indicator for MediaSource */}
-      {!isLoading && useMediaSource && currentChunk < totalChunks && (
+      {!isLoading && useMediaSource && currentChunk < totalChunks && !isSeekBuffering && (
         <div className="space-y-1">
           <div className="flex justify-between items-center text-xs text-gray-500">
             <span>Buffering in background...</span>
