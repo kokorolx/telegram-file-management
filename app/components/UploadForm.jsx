@@ -210,6 +210,8 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
        isSupported: isFragmentationSupported()
      });
 
+     let videoDuration = null;
+     
      if (shouldFragment) {
        try {
          setQueue(prev => prev.map(f =>
@@ -218,13 +220,19 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
          setIsFragmenting(true);
          setFragmentationProgress(0);
 
-         const fragmentedBlob = await fragmentMP4(fileItem.file, (progress) => {
+         const result = await fragmentMP4(fileItem.file, (progress) => {
            setFragmentationProgress(progress);
            updateFileStatus(fileItem.id, 'pending', progress, null, `Fragmenting video: ${progress.toFixed(0)}%`);
          });
 
+         const { blob: fragmentedBlob, duration } = result;
+         videoDuration = duration;
+
          console.log(`[FFMPEG] Browser fragmentation successful for ${fileItem.file.name}`);
          console.log(`[FFMPEG] Size comparison - Original: ${fileItem.file.size}, Fragmented: ${fragmentedBlob.size}`);
+         if (videoDuration) {
+           console.log(`[FFMPEG] Video duration: ${videoDuration}s`);
+         }
 
          processedFile = new File([fragmentedBlob], fileItem.file.name, { type: 'video/mp4' });
          wasFragmented = true;
@@ -303,38 +311,39 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
           let uploadStartTimeLocal = null;
 
           await encryptFileChunks(
-            processedFile,
-            password,
-            (partNumber, totalParts, stage) => {
-              // Calculate progress as percentage
-              // partNumber already includes skipped chunks from resume, so use it directly
-              const progress = (partNumber / totalParts) * 100;
+             processedFile,
+             password,
+             (partNumber, totalParts, stage) => {
+               // Calculate progress as percentage
+               // partNumber already includes skipped chunks from resume, so use it directly
+               const progress = (partNumber / totalParts) * 100;
 
-              // Detect when uploading phase starts and set uploadStartTime locally
-              const isNowUploading = stage && stage.toLowerCase().includes('uploading');
+               // Detect when uploading phase starts and set uploadStartTime locally
+               const isNowUploading = stage && stage.toLowerCase().includes('uploading');
 
-              if (isNowUploading && !uploadStartTimeLocal) {
-                uploadStartTimeLocal = Date.now();
-              }
+               if (isNowUploading && !uploadStartTimeLocal) {
+                 uploadStartTimeLocal = Date.now();
+               }
 
-              // Calculate ETA based on upload speed
-              // For resumed uploads, use actual chunk sizes (not uniform) to calculate bytes already uploaded
-              let bytesAlreadyUploaded = 0;
-              if (isResume && chunkPlan && chunkPlan.length > 0) {
-                // Sum the sizes of chunks that were already uploaded (before resumeFrom)
-                bytesAlreadyUploaded = chunkPlan.slice(0, Math.max(0, resumeFrom - 1)).reduce((sum, size) => sum + size, 0);
-              }
-              const eta = calculateETA(fileItem.file.size, progress, uploadStartTimeLocal, stage, bytesAlreadyUploaded);
+               // Calculate ETA based on upload speed
+               // For resumed uploads, use actual chunk sizes (not uniform) to calculate bytes already uploaded
+               let bytesAlreadyUploaded = 0;
+               if (isResume && chunkPlan && chunkPlan.length > 0) {
+                 // Sum the sizes of chunks that were already uploaded (before resumeFrom)
+                 bytesAlreadyUploaded = chunkPlan.slice(0, Math.max(0, resumeFrom - 1)).reduce((sum, size) => sum + size, 0);
+               }
+               const eta = calculateETA(fileItem.file.size, progress, uploadStartTimeLocal, stage, bytesAlreadyUploaded);
 
-              updateFileStatus(fileItem.id, 'uploading', progress, null, stage, eta);
-            },
-            fileItem.folderId, // Use the folderId stored in the file item
-            abortController.signal,
-            fileId,        // Pass file_id for resume
-            resumeFrom,    // Pass resume starting point
-            chunkPlan,     // Pass saved chunk sizes for resume
-            wasFragmented  // Pass fragmentation flag
-          );
+               updateFileStatus(fileItem.id, 'uploading', progress, null, stage, eta);
+             },
+             fileItem.folderId, // Use the folderId stored in the file item
+             abortController.signal,
+             fileId,        // Pass file_id for resume
+             resumeFrom,    // Pass resume starting point
+             chunkPlan,     // Pass saved chunk sizes for resume
+             wasFragmented, // Pass fragmentation flag
+             videoDuration  // Pass extracted video duration in seconds
+           );
 
           updateFileStatus(fileItem.id, 'success', 100);
           console.log(`[Upload] Successfully uploaded ${fileItem.file.name} (ID: ${fileItem.id})`);

@@ -61,16 +61,17 @@ export async function GET(request, { params }) {
         is_compressed: p.is_compressed || false,
       })),
       file: {
-        id: file.id,
-        original_filename: file.original_filename,
-        mime_type: file.mime_type,
-        file_size: file.file_size,
-        is_fragmented: file.is_fragmented || false,  // Include fragmentation status
-        key_data: file.encrypted_file_key ? {
-             encrypted_key: file.encrypted_file_key, // Server stored field name
-             iv: file.key_iv // Server stored field name
-        } : null
-      }
+         id: file.id,
+         original_filename: file.original_filename,
+         mime_type: file.mime_type,
+         file_size: file.file_size,
+         is_fragmented: file.is_fragmented || false,  // Include fragmentation status
+         video_duration: file.video_duration || null,  // Duration in seconds for videos
+         key_data: file.encrypted_file_key ? {
+              encrypted_key: file.encrypted_file_key, // Server stored field name
+              iv: file.key_iv // Server stored field name
+         } : null
+       }
     }, { status: 200 });
   } catch (err) {
     console.error('Error fetching file parts:', err);

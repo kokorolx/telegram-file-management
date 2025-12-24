@@ -31,10 +31,11 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
   const [fallbackReason, setFallbackReason] = useState(null);
 
   const videoRef = useRef(null);
-  const mediaSourceRef = useRef(null);
-  const sourceBufferRef = useRef(null);
-  const abortControllerRef = useRef(null);
-  const decryptionKeyRef = useRef(null);
+   const mediaSourceRef = useRef(null);
+   const sourceBufferRef = useRef(null);
+   const abortControllerRef = useRef(null);
+   const decryptionKeyRef = useRef(null);
+   const backgroundLoaderRef = useRef(null);
 
   // Removed local key derivation - using EncryptionContext
 
@@ -261,6 +262,51 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
       }
     });
   }, []);
+
+  // Load chunks on-demand (when user seeks or buffer runs low)
+  const loadChunksOnDemand = useCallback(async (startChunk, endChunk, key) => {
+    if (!sourceBufferRef.current || !mediaSourceRef.current) return;
+    
+    console.log(`[VideoPlayer] On-demand loading chunks ${startChunk}-${endChunk}`);
+    for (let i = startChunk; i <= endChunk; i++) {
+      if (abortControllerRef.current?.signal.aborted) break;
+      
+      try {
+        // Check if already buffered
+        const buffered = videoRef.current?.buffered;
+        if (buffered && buffered.length > 0) {
+          // Rough check: if we have any buffered content, skip
+          if (videoRef.current.duration && buffered.end(buffered.length - 1) > (i / totalChunksRef.current) * videoRef.current.duration) {
+            console.log(`[VideoPlayer] Chunk ${i} likely already buffered, skipping`);
+            continue;
+          }
+        }
+        
+        console.log(`[VideoPlayer] On-demand fetching chunk ${i}...`);
+        const { decrypted } = await fetchAndDecryptChunk(i, key, abortControllerRef.current.signal);
+        
+        // Warn if video element is in error state
+        if (videoRef.current?.error) {
+          console.warn(`[VideoPlayer] Video element has error before append: ${videoRef.current.error.message}`);
+        }
+        
+        if (sourceBufferRef.current.updating) {
+          await new Promise(r => sourceBufferRef.current.addEventListener('updateend', r, { once: true }));
+        }
+        
+        await appendToSourceBuffer(sourceBufferRef.current, decrypted);
+        setCurrentChunk(i);
+        console.log(`[VideoPlayer] On-demand appended chunk ${i}`);
+      } catch (err) {
+        console.error(`[VideoPlayer] On-demand load failed for chunk ${i}:`, err.message);
+        // Stop if video element has error
+        if (videoRef.current?.error) {
+          console.error(`[VideoPlayer] Stopping on-demand load due to video error`);
+          break;
+        }
+      }
+    }
+  }, [fetchAndDecryptChunk, appendToSourceBuffer]);
 
   // Main loading function with hybrid approach
   useEffect(() => {
@@ -503,16 +549,17 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
                   mediaSource.duration = videoDuration;
                 } else {
                   console.warn(`[VideoPlayer] Duration extraction failed or returned invalid value: ${videoDuration}`);
-                  // Fallback: estimate from chunk count (rough estimate: ~6 mins per chunk at 2-3MB)
-                  // This allows timeline to show, even if not perfectly accurate
-                  const estimatedDuration = total * 6 * 60; // very conservative estimate
-                  console.log(`[VideoPlayer] Using estimated duration: ${estimatedDuration}s (${total} chunks)`);
+                  // Fallback: estimate from chunk count + file size
+                  // Average chunk is ~2.5MB, typical bitrate for video is ~2Mbps, so ~10 sec per 2.5MB
+                  // More conservative: assume ~20-25 sec per chunk for 2-3MB chunks
+                  const estimatedDuration = total * 25; // 25 sec per chunk is reasonable for 2-3MB chunks
+                  console.log(`[VideoPlayer] Using estimated duration: ${estimatedDuration}s (${total} chunks × 25s)`);
                   mediaSource.duration = estimatedDuration;
                 }
               } catch (e) {
                 console.error(`[VideoPlayer] Exception during duration extraction:`, e.message);
-                // Fallback: set a large duration to enable timeline
-                const fallbackDuration = total * 6 * 60;
+                // Fallback: estimate from chunk count (~20-25 sec per 2-3MB chunk)
+                const fallbackDuration = total * 25;
                 console.log(`[VideoPlayer] Using fallback duration: ${fallbackDuration}s`);
                 mediaSource.duration = fallbackDuration;
               }
@@ -581,53 +628,75 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
                 console.warn('[VideoPlayer] Play failed:', e.message);
               }
               
-              // Continue loading a few chunks ahead to avoid buffer issues
-               // Keep only 3-5 chunks buffered, let playback naturally trigger loading more
-               const MAX_CHUNKS_AHEAD = 5;
-               console.log(`[VideoPlayer] Starting background load (keeping max ${MAX_CHUNKS_AHEAD} chunks ahead)`);
-               (async () => {
-                 for (let i = BUFFER_THRESHOLD + 1; i <= Math.min(BUFFER_THRESHOLD + MAX_CHUNKS_AHEAD, total); i++) {
-                   if (cancelled) {
-                     console.log(`[VideoPlayer] Background chunk loading cancelled at chunk ${i}`);
-                     break;
-                   }
-
-                   try {
-                     console.log(`[VideoPlayer] Background loading chunk ${i}/${total}...`);
-                     const { decrypted: mediaDecrypted } = await fetchAndDecryptChunk(i, key, abortControllerRef.current.signal);
-                     console.log(`[VideoPlayer] Fetched background chunk ${i} (${mediaDecrypted.length} bytes), appending...`);
-                     
-                     // Wait for sourceBuffer to finish any pending updates
-                     if (sourceBuffer.updating) {
-                       await new Promise(r => sourceBuffer.addEventListener('updateend', r, { once: true }));
-                     }
-                     
-                     await appendToSourceBuffer(sourceBuffer, mediaDecrypted);
-                     console.log(`[VideoPlayer] Successfully appended background chunk ${i}`);
-                     setCurrentChunk(i);
-                   } catch (err) {
-                     console.error(`[VideoPlayer] Failed to load background chunk ${i}:`, err.message);
-                     // Stop loading if buffer is full, let playback catch up
-                     if (err.message.includes('SourceBuffer is full')) {
-                       console.log(`[VideoPlayer] Buffer full at chunk ${i}, stopping preload`);
-                       break;
-                     }
-                   }
-                 }
-                 
-                 // Signal end of stream only if we loaded everything
-                 if (BUFFER_THRESHOLD + MAX_CHUNKS_AHEAD >= total && !cancelled && mediaSource.readyState === 'open') {
-                   console.log('[VideoPlayer] All chunks buffered, signaling endOfStream...');
-                   if (sourceBuffer.updating) {
-                     await new Promise(r => sourceBuffer.addEventListener('updateend', r, { once: true }));
-                   }
-                   try {
-                     mediaSource.endOfStream();
-                   } catch (e) {
-                     console.warn('[VideoPlayer] endOfStream failed:', e.message);
-                   }
-                 }
-               })();
+              // Continuous background buffer refill
+              // Keep 5-10 chunks ahead of playhead, load more as video plays
+              const MAX_CHUNKS_AHEAD = 8;
+              let nextChunkToLoad = BUFFER_THRESHOLD + 1;
+              let allChunksLoaded = false;
+              
+              console.log(`[VideoPlayer] Starting continuous background load (max ${MAX_CHUNKS_AHEAD} chunks ahead)`);
+              
+              const backgroundLoader = setInterval(async () => {
+                if (cancelled || allChunksLoaded) {
+                  clearInterval(backgroundLoader);
+                  return;
+                }
+                
+                try {
+                  // Check how many chunks are buffered ahead of playhead
+                  const buffered = videoRef.current?.buffered;
+                  const currentTime = videoRef.current?.currentTime || 0;
+                  const totalDuration = mediaSource.duration || 1;
+                  
+                  if (!buffered || buffered.length === 0) return;
+                  
+                  const bufferedEnd = buffered.end(buffered.length - 1);
+                  const bufferedAhead = bufferedEnd - currentTime;
+                  const secondsPerChunk = totalDuration / total;
+                  const chunksAhead = Math.ceil(bufferedAhead / secondsPerChunk);
+                  
+                  // If we have less than MAX_CHUNKS_AHEAD, load more
+                  if (chunksAhead < MAX_CHUNKS_AHEAD && nextChunkToLoad <= total) {
+                    console.log(`[VideoPlayer] Buffer low (${chunksAhead} chunks ahead), loading chunk ${nextChunkToLoad}...`);
+                    
+                    const { decrypted: mediaDecrypted } = await fetchAndDecryptChunk(nextChunkToLoad, key, abortControllerRef.current.signal);
+                    
+                    if (sourceBuffer.updating) {
+                      await new Promise(r => sourceBuffer.addEventListener('updateend', r, { once: true }));
+                    }
+                    
+                    await appendToSourceBuffer(sourceBuffer, mediaDecrypted);
+                    setCurrentChunk(nextChunkToLoad);
+                    nextChunkToLoad++;
+                    
+                    if (nextChunkToLoad > total) {
+                      allChunksLoaded = true;
+                      clearInterval(backgroundLoader);
+                      
+                      // Signal end of stream when all chunks loaded
+                      if (mediaSource.readyState === 'open') {
+                        if (sourceBuffer.updating) {
+                          await new Promise(r => sourceBuffer.addEventListener('updateend', r, { once: true }));
+                        }
+                        try {
+                          mediaSource.endOfStream();
+                          console.log('[VideoPlayer] All chunks loaded, signaled endOfStream');
+                        } catch (e) {
+                          console.warn('[VideoPlayer] endOfStream failed:', e.message);
+                        }
+                      }
+                    }
+                  }
+                } catch (err) {
+                  console.error(`[VideoPlayer] Background load error:`, err.message);
+                  if (err.message.includes('SourceBuffer is full')) {
+                    console.log(`[VideoPlayer] Buffer full, pausing background load`);
+                  }
+                }
+              }, 1000); // Check every second
+               
+              // Store interval for cleanup
+              backgroundLoaderRef.current = backgroundLoader;
             } else {
               // Non-fragmented: original behavior
               setCurrentChunk(1);
@@ -721,14 +790,17 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
     loadVideo();
 
     return () => {
-      cancelled = true;
-      abortControllerRef.current?.abort();
-      if (mediaSourceRef.current?.readyState === 'open') {
-        try { mediaSourceRef.current.endOfStream(); } catch (e) {}
-      }
-      if (videoSrc) URL.revokeObjectURL(videoSrc);
-      if (mediaSourceUrl) URL.revokeObjectURL(mediaSourceUrl);
-    };
+       cancelled = true;
+       abortControllerRef.current?.abort();
+       if (backgroundLoaderRef.current) {
+         clearInterval(backgroundLoaderRef.current);
+       }
+       if (mediaSourceRef.current?.readyState === 'open') {
+         try { mediaSourceRef.current.endOfStream(); } catch (e) {}
+       }
+       if (videoSrc) URL.revokeObjectURL(videoSrc);
+       if (mediaSourceUrl) URL.revokeObjectURL(mediaSourceUrl);
+     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileId, encryptionKey, masterPassword, mimeType, fetchAndDecryptChunk, appendToSourceBuffer]);
 
@@ -809,16 +881,31 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
           style={{ maxHeight: '600px', display: isLoading ? 'none' : 'block' }}
           onError={(e) => {
             console.error('[Video] Video element error:', e);
-            console.error('[Video] Video error code:', videoRef.current?.error?.code);
-            console.error('[Video] Video error message:', videoRef.current?.error?.message);
-            setError(`Video playback error: ${videoRef.current?.error?.message || 'Unknown error'}`);
+            const errorCode = videoRef.current?.error?.code;
+            const errorMsg = videoRef.current?.error?.message;
+            const errorNames = {
+              1: 'MEDIA_ERR_ABORTED',
+              2: 'MEDIA_ERR_NETWORK',
+              3: 'MEDIA_ERR_DECODE',
+              4: 'MEDIA_ERR_SRC_NOT_SUPPORTED'
+            };
+            console.error('[Video] Error code:', errorCode, `(${errorNames[errorCode] || 'Unknown'})`);
+            console.error('[Video] Error message:', errorMsg);
+            console.error('[Video] Buffered ranges:', videoRef.current?.buffered.length, 'ranges');
+            if (videoRef.current?.buffered.length > 0) {
+              for (let i = 0; i < videoRef.current.buffered.length; i++) {
+                console.error(`  [${i}]: ${videoRef.current.buffered.start(i).toFixed(2)}s - ${videoRef.current.buffered.end(i).toFixed(2)}s`);
+              }
+            }
+            setError(`Video playback error (${errorNames[errorCode] || 'Code ' + errorCode}): ${errorMsg || 'Unknown'}`);
           }}
           onWaiting={() => {}}
           onSeeking={() => {
             // User is seeking - may need to fetch chunks if seeking to unbuffered area
-            if (useMediaSource && videoRef.current && sourceBufferRef.current) {
+            if (useMediaSource && videoRef.current && sourceBufferRef.current && mediaSourceRef.current) {
               const seekTime = videoRef.current.currentTime;
               const buffered = videoRef.current.buffered;
+              const totalDuration = mediaSourceRef.current.duration;
               
               // Check if seek target is buffered
               let isBuffered = false;
@@ -829,9 +916,33 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
                 }
               }
               
-              if (!isBuffered) {
-                console.log(`[VideoPlayer] Seeking to unbuffered time ${seekTime.toFixed(2)}s, will load on-demand`);
-                // TODO: Implement on-demand chunk loading based on seek position
+              if (!isBuffered && totalDuration > 0) {
+                // Estimate which chunk contains this seek position
+                const progressRatio = seekTime / totalDuration;
+                const estimatedBytePos = fileSize * progressRatio;
+                const avgChunkSize = fileSize / totalChunksRef.current;
+                let estimatedChunk = Math.max(2, Math.ceil(estimatedBytePos / avgChunkSize));
+                estimatedChunk = Math.min(estimatedChunk, totalChunksRef.current);
+                
+                // Find the last buffered chunk
+                const buffered = videoRef.current.buffered;
+                let lastBufferedChunk = 1;
+                if (buffered.length > 0) {
+                  const bufferedEnd = buffered.end(buffered.length - 1);
+                  const totalDur = mediaSourceRef.current?.duration || totalDuration;
+                  lastBufferedChunk = Math.ceil((bufferedEnd / totalDur) * totalChunksRef.current);
+                }
+                
+                console.log(`[VideoPlayer] Seek to unbuffered ${seekTime.toFixed(2)}s, last buffered chunk: ${lastBufferedChunk}, seek target: chunk ${estimatedChunk}`);
+                
+                // Load from last buffered chunk to seek target to maintain timeline continuity
+                const startChunk = Math.max(lastBufferedChunk + 1, 2);
+                const endChunk = Math.min(estimatedChunk + 3, totalChunksRef.current); // Get seek target + 3 more
+                
+                console.log(`[VideoPlayer] Loading chunks ${startChunk}-${endChunk} to fill gap`);
+                if (decryptionKeyRef.current && abortControllerRef.current) {
+                  loadChunksOnDemand(startChunk, endChunk, decryptionKeyRef.current);
+                }
               }
             }
           }}
