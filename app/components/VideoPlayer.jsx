@@ -595,12 +595,6 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
               for(let i=0; i<buffered.length; i++) {
                 ranges.push(`[${buffered.start(i).toFixed(2)}s - ${buffered.end(i).toFixed(2)}s]`);
               }
-                readyState: videoRef.current.readyState,
-                paused: videoRef.current.paused,
-                error: videoRef.current.error,
-                buffered: ranges.join(', '),
-                currentTime: videoRef.current.currentTime
-              });
             }
 
             // For non-fragmented: just load remaining chunks as-is

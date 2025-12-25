@@ -88,20 +88,7 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
     setQueue(prev => [...prev, ...newFiles]);
   };
 
-  // Diagnostic log on every render to track feature status
-  useEffect(() => {
-    if (queue.length > 0) {
-        isEnabled: isMp4FragmentationEnabled(),
-        isSupported: isFragmentationSupported(),
-        hasVideo: queue.some(item => {
-          const ext = item.file.name.toLowerCase().split('.').pop();
-          const type = item.file.type.toLowerCase();
-          return type === 'video/mp4' || type === 'video/quicktime' || ext === 'mp4' || ext === 'mov';
-        }),
-        queueLength: queue.length
-      });
-    }
-  }, [queue.length]);
+
 
   // Handle password verification for upload
   const handlePasswordSubmit = async (password) => {
@@ -207,7 +194,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
      // MP4 Fragmentation (if enabled for MP4/MOV videos)
      const isMP4Video = (fileItem.file.type === 'video/mp4' || fileItem.file.type === 'video/quicktime' || fileItem.file.name.toLowerCase().endsWith('.mp4') || fileItem.file.name.toLowerCase().endsWith('.mov'));
      const shouldFragment = isFragmentationActive && isMP4Video && isFragmentationSupported() && fileItem.file.size <= (200 * 1024 * 1024);
-     });
 
      let videoDuration = null;
      
