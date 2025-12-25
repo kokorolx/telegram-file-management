@@ -7,6 +7,7 @@ import LargeVideoWarningModal from './LargeVideoWarningModal';
 import { encryptFileChunks } from '@/lib/browserUploadEncryption';
 import { fragmentMP4, getFragmentationInfo, isFragmentationSupported } from '@/lib/videoFragmentation';
 import { isMp4FragmentationEnabled } from '@/lib/featureFlags';
+import { config } from '@/lib/config';
 
 const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles, hideDropZone = false }, ref) => {
   const { masterPassword, isUnlocked, unlock } = useEncryption();
@@ -21,7 +22,7 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
   const [largeVideoWarningFile, setLargeVideoWarningFile] = useState(null);
   const fileInputRef = useRef(null);
   const abortControllersRef = useRef(new Map()); // Track abort controllers per file
-  const MAX_CONCURRENT_FILES = 3;
+  const MAX_CONCURRENT_FILES = config.maxConcurrentChunkFetches;
 
   // MP4 fragmentation control - Direct from feature flag
   const isFragmentationActive = isMp4FragmentationEnabled();

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useEncryption } from '../contexts/EncryptionContext';
 import { decryptChunkBrowser } from '@/lib/clientDecryption';
 import { blobCache } from '@/lib/secureImageCache';
+import { config } from '@/lib/config';
 
 /**
  * Secure Video Player with Browser-Side Decryption (CDN-Friendly)
@@ -702,7 +703,7 @@ export default function VideoPlayer({ fileId, fileName, fileSize, mimeType }) {
               setCurrentChunk(1);
               
               // PROGRESSIVE STREAMING: Load minimal chunks before starting playback
-              const BUFFER_THRESHOLD = 3; // Start playback after init + 2 media chunks
+              const BUFFER_THRESHOLD = config.videoPlaybackBufferThreshold;
               let chunksBuffered = 1; // Already have chunk 1 (init segment)
               
               // Load chunks until we reach buffer threshold
