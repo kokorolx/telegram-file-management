@@ -10,6 +10,7 @@ export default function FolderNav({ currentFolderId, onFolderSelect, refreshTrig
   const { isUnlocked, unlock, lock } = useEncryption();
   const [folders, setFolders] = useState([]);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
+  const [isRootExpanded, setIsRootExpanded] = useState(true); // Root folder collapse/expand
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -29,6 +30,7 @@ export default function FolderNav({ currentFolderId, onFolderSelect, refreshTrig
       setFolders([]);
       setChildrenMap({});
       setExpandedFolders(new Set());
+      setIsRootExpanded(true);
       setError(null);
     }
   }, [user]);
@@ -337,29 +339,40 @@ export default function FolderNav({ currentFolderId, onFolderSelect, refreshTrig
         )}
 
         {/* My Files (root) */}
-        <button
-          onClick={() => onFolderSelect(null)}
-          className={`w-full text-left px-3 py-2.5 rounded-lg text-sm mb-1 transition-colors font-medium flex items-center gap-2 ${
-            currentFolderId === null
-              ? 'bg-blue-100 text-blue-900 border border-blue-200'
-              : 'hover:bg-gray-100 text-gray-700 border border-transparent'
-          }`}
-        >
-          <span className="w-5"></span> {/* Indent spacer matching toggle arrow */}
+        <div className={`flex items-center gap-1 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
+          currentFolderId === null
+            ? 'bg-blue-100 text-blue-900 font-medium'
+            : 'hover:bg-gray-100 text-gray-700'
+        }`}>
+          <div
+            className="w-4 h-4 flex items-center justify-center cursor-pointer text-gray-400 hover:text-gray-600 mr-1"
+            onClick={() => setIsRootExpanded(!isRootExpanded)}
+          >
+            <span className="text-[10px]">{isRootExpanded ? '▼' : '▶'}</span>
+          </div>
           <span className="text-lg">📁</span>
-          My Files
-        </button>
+          <span
+            className="truncate text-sm flex-1"
+            onClick={() => onFolderSelect(null)}
+          >
+            My Files
+          </span>
+        </div>
 
         {/* Folder list */}
-        {loading ? (
-          <div className="text-center py-6 text-gray-500 text-sm">Loading folders...</div>
-        ) : folders.length === 0 ? (
-          <div className="text-center py-6 text-gray-500 text-sm">No folders yet</div>
-        ) : (
-          <div className="space-y-0.5 mt-1">
-            {folders.map((folder) => (
-              <FolderTreeItem key={folder.id} folder={folder} />
-            ))}
+        {isRootExpanded && (
+          <div className="pl-4">
+            {loading ? (
+              <div className="text-center py-6 text-gray-500 text-sm">Loading folders...</div>
+            ) : folders.length === 0 ? (
+              <div className="text-center py-6 text-gray-500 text-sm">No folders yet</div>
+            ) : (
+              <div className="space-y-0.5 mt-1">
+                {folders.map((folder) => (
+                  <FolderTreeItem key={folder.id} folder={folder} />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
