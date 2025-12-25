@@ -83,7 +83,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
     }).filter(f => f !== null);
 
     newFiles.forEach(f => {
-      console.log(`[UploadForm] Added file: ${f.file.name}, Type: ${f.file.type}, Size: ${f.file.size}`);
     });
 
     setQueue(prev => [...prev, ...newFiles]);
@@ -92,7 +91,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
   // Diagnostic log on every render to track feature status
   useEffect(() => {
     if (queue.length > 0) {
-      console.log('[UploadForm] Feature Status:', {
         isEnabled: isMp4FragmentationEnabled(),
         isSupported: isFragmentationSupported(),
         hasVideo: queue.some(item => {
@@ -148,7 +146,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
     // Remove from queue
     setQueue(prev => prev.filter(f => f.id !== fileId));
   };
-
 
   const updateFileStatus = useCallback((id, status, progress, error = null, stage = '', estimatedTimeRemaining = null) => {
     setQueue(prev => prev.map(f => {
@@ -209,16 +206,7 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
 
      // MP4 Fragmentation (if enabled for MP4/MOV videos)
      const isMP4Video = (fileItem.file.type === 'video/mp4' || fileItem.file.type === 'video/quicktime' || fileItem.file.name.toLowerCase().endsWith('.mp4') || fileItem.file.name.toLowerCase().endsWith('.mov'));
-     
-     // CRITICAL: Check browser support (SharedArrayBuffer) before attempting
      const shouldFragment = isFragmentationActive && isMP4Video && isFragmentationSupported() && fileItem.file.size <= (200 * 1024 * 1024);
-
-     console.log(`[Upload] Fragmentation decision for ${fileItem.file.name}:`, {
-       shouldFragment,
-       isFragmentationActive,
-       isMP4Video,
-       fileSize: fileItem.file.size,
-       isSupported: isFragmentationSupported()
      });
 
      let videoDuration = null;
@@ -238,11 +226,7 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
 
          const { blob: fragmentedBlob, duration } = result;
          videoDuration = duration;
-
-         console.log(`[FFMPEG] Browser fragmentation successful for ${fileItem.file.name}`);
-         console.log(`[FFMPEG] Size comparison - Original: ${fileItem.file.size}, Fragmented: ${fragmentedBlob.size}`);
          if (videoDuration) {
-           console.log(`[FFMPEG] Video duration: ${videoDuration}s`);
          }
 
          processedFile = new File([fragmentedBlob], fileItem.file.name, { type: 'video/mp4' });
@@ -252,7 +236,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
            f.id === fileItem.id ? { ...f, isFragmenting: false } : f
          ));
        } catch (fragErr) {
-         console.warn('[UPLOAD] Fragmentation failed, uploading original:', fragErr);
          // Continue with original file on fragmentation failure
          setIsFragmenting(false);
          setQueue(prev => prev.map(f =>
@@ -260,8 +243,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
          ));
        }
      }
-
-     console.log(`[Upload] Starting encryption/upload for ${fileItem.file.name}. Fragmented: ${wasFragmented}`);
 
      // Update status to uploading and record start time
      const uploadStartTime = Date.now();
@@ -288,8 +269,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
         fileId = checkData.file_id;
         resumeFrom = Math.min(...checkData.missing_chunks);
         isResume = true;
-        console.log(`[Upload] Resuming upload for ${fileItem.file.name} (File ID: ${fileId}) from chunk ${resumeFrom}`);
-
         // Retrieve the saved chunk plan from server
         const chunkPlanRes = await fetch(
           `/api/upload/chunk-plan?file_id=${fileId}`,
@@ -298,7 +277,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
         if (chunkPlanRes.ok) {
           const chunkPlanData = await chunkPlanRes.json();
           chunkPlan = chunkPlanData.chunk_sizes;
-          console.log(`[Upload] Retrieved chunk plan for resumed upload:`, chunkPlan);
         }
 
         updateFileStatus(
@@ -309,11 +287,9 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
           `Resuming from chunk ${resumeFrom}/${checkData.total_chunks}`
         );
       } else if (checkData.exists) {
-        console.warn(`[Upload] File ${fileItem.file.name} already uploaded, but cannot resume.`);
         updateFileStatus(fileItem.id, 'error', 0, 'File already uploaded');
         return;
       } else {
-        console.log(`[Upload] Starting new upload for ${fileItem.file.name}`);
       }
 
       // If encrypted upload, use browser-side encryption
@@ -357,7 +333,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
            );
 
           updateFileStatus(fileItem.id, 'success', 100);
-          console.log(`[Upload] Successfully uploaded ${fileItem.file.name} (ID: ${fileItem.id})`);
         } catch (encErr) {
           console.error(`[UPLOAD] ${fileItem.id} - Encryption failed:`, encErr);
           throw new Error(`Encryption failed: ${encErr.message}`);
@@ -372,7 +347,6 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
     } catch (err) {
       // Check if it was a user cancellation
       if (err.message.includes('cancelled') || err.message.includes('Abort')) {
-        console.log(`[Upload] Upload for ${fileItem.file.name} (ID: ${fileItem.id}) was cancelled.`);
         // Already removed from queue by cancelUpload
       } else {
         console.error(`[UPLOAD] ${fileItem.id} - FAILED:`, err.message);
