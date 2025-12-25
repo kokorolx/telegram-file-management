@@ -201,8 +201,17 @@ export default function FolderNav({ currentFolderId, onFolderSelect, refreshTrig
   // We no longer build a full tree upfront from a flat list logic
   // Instead we render recursively using `folders` (root) and `childrenMap`.
 
-  const FolderTreeItem = ({ folder, parentPath = '' }) => {
-     const children = childrenMap[folder.id] || [];
+  const FolderTreeItem = ({ folder, parentPath = '', ancestorIds = new Set() }) => {
+     // Prevent circular references: filter out any children that are ancestors of this folder
+     const allChildren = childrenMap[folder.id] || [];
+     const children = allChildren.filter(child => {
+         // Prevent a folder from appearing inside itself
+         if (child.id === folder.id) return false;
+         // Prevent circular references (ancestor appearing as child)
+         if (ancestorIds.has(child.id)) return false;
+         return true;
+     });
+     
      const isExpanded = expandedFolders.has(folder.id);
      const isSelected = currentFolderId === folder.id;
 
@@ -254,9 +263,13 @@ export default function FolderNav({ currentFolderId, onFolderSelect, refreshTrig
                    {children.length === 0 ? (
                        !hasLoaded ? <div className="px-2 py-1 text-xs text-gray-400">Loading...</div> : <div className="px-2 py-1 text-xs text-gray-400">Empty</div>
                    ) : (
-                       children.map(child => (
-                           <FolderTreeItem key={child.id} folder={child} parentPath={currentPath} />
-                       ))
+                       children.map(child => {
+                           const newAncestorIds = new Set(ancestorIds);
+                           newAncestorIds.add(folder.id);
+                           return (
+                               <FolderTreeItem key={child.id} folder={child} parentPath={currentPath} ancestorIds={newAncestorIds} />
+                           );
+                       })
                    )}
                </div>
            )}
