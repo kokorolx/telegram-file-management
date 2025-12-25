@@ -2,6 +2,21 @@
 
 All user-facing updates and improvements to Telegram Vault.
 
+## [December 25, 2025] - Faster Video Streaming (Beta)
+
+### ⚡ Performance
+- **Stream Videos Up to 200MB** - Smaller videos now stream directly without requiring a full download first
+- **Quicker Previews** - Watch videos faster with direct streaming for quick previews
+
+### ⚠️ Known Issues
+- **Playback Issues** - Direct streaming is currently in beta and has playback reliability issues we're investigating
+- **Workaround** - Use the full download option if you experience playback problems
+
+### 🎯 What This Means
+We're working on faster video streaming for smaller files. This feature is in early beta and we're actively fixing the playback issues.
+
+---
+
 ## [December 23, 2025] - Performance & UI Polish
 
 ### ⚡ Performance

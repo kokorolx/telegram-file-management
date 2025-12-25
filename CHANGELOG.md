@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2025-12-25] - Streaming Support for Smaller Videos
+
+### Added
+- **Direct Streaming for Videos ≤200MB** - Smaller video files now stream directly without full download requirement, improving user experience for quick previews.
+
+### Known Issues
+- **Playback Not Working** - Direct streaming functionality added but playback currently fails. Root cause appears to be related to MediaSource API seeking and chunk windowing logic. Background loader fetches all chunks instead of targeted range during seeks.
+
+### Technical Notes
+- Issue tracked in VideoPlayer.jsx seeking/buffering logic
+- `tryMediaSource` function being repeatedly called during seeks, hitting QuotaExceededError
+- Requires investigation into SourceBuffer state management and background loader pause/resume mechanism
+
+---
+
 ## [2025-12-22] - Phase 8: Feature Flag Infrastructure for Recovery Codes
 
 ### Added

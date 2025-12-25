@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallba
 
 import { useEncryption } from '../contexts/EncryptionContext';
 import PasswordPromptModal from './PasswordPromptModal';
+import LargeVideoWarningModal from './LargeVideoWarningModal';
 import { encryptFileChunks } from '@/lib/browserUploadEncryption';
 import { fragmentMP4, getFragmentationInfo, isFragmentationSupported } from '@/lib/videoFragmentation';
 import { isMp4FragmentationEnabled } from '@/lib/featureFlags';
@@ -16,6 +17,8 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
   const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
   const [pendingFileForUpload, setPendingFileForUpload] = useState(null);
   const [customFileName, setCustomFileName] = useState('');
+  const [showLargeVideoWarning, setShowLargeVideoWarning] = useState(false);
+  const [largeVideoWarningFile, setLargeVideoWarningFile] = useState(null);
   const fileInputRef = useRef(null);
   const abortControllersRef = useRef(new Map()); // Track abort controllers per file
   const MAX_CONCURRENT_FILES = 3;
@@ -46,18 +49,37 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
   }, [externalFiles]);
 
   const addFilesToQueue = (fileList, folderId = null) => {
-    const newFiles = Array.from(fileList).map(file => ({
-      file,
-      id: Math.random().toString(36).substr(2, 9),
-      status: 'pending', // pending, uploading, success, error
-      progress: 0,
-      error: null,
-      folderId: folderId || currentFolderId, // Use target folder if provided, else current
-      progressStage: '', // 'Encrypting chunk X/Y', 'Uploading chunk X/Y', etc
-      startTime: null, // Track when upload starts
-      estimatedTimeRemaining: null, // ETA in seconds
-      isFragmenting: false, // Track if currently fragmenting
-    }));
+    const MAX_FRAGMENTATION_SIZE = 200 * 1024 * 1024; // 200MB
+    
+    const newFiles = Array.from(fileList).map(file => {
+      // Check if video is too large for streaming (only warn if streaming is enabled)
+      const isMP4Video = (file.type === 'video/mp4' || file.type === 'video/quicktime' || file.name.toLowerCase().endsWith('.mp4') || file.name.toLowerCase().endsWith('.mov'));
+      const isFileTooLarge = isMP4Video && file.size > MAX_FRAGMENTATION_SIZE;
+      
+      if (isFileTooLarge && isFragmentationActive) {
+        // Show warning modal only if streaming feature is enabled
+        setLargeVideoWarningFile({
+          file,
+          folderId: folderId || currentFolderId,
+          sizeMB: (file.size / (1024 * 1024)).toFixed(1)
+        });
+        setShowLargeVideoWarning(true);
+        return null; // Don't add to queue yet
+      }
+      
+      return {
+        file,
+        id: Math.random().toString(36).substr(2, 9),
+        status: 'pending', // pending, uploading, success, error
+        progress: 0,
+        error: null,
+        folderId: folderId || currentFolderId, // Use target folder if provided, else current
+        progressStage: '', // 'Encrypting chunk X/Y', 'Uploading chunk X/Y', etc
+        startTime: null, // Track when upload starts
+        estimatedTimeRemaining: null, // ETA in seconds
+        isFragmenting: false, // Track if currently fragmenting
+      };
+    }).filter(f => f !== null);
 
     newFiles.forEach(f => {
       console.log(`[UploadForm] Added file: ${f.file.name}, Type: ${f.file.type}, Size: ${f.file.size}`);
@@ -187,25 +209,13 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
      // MP4 Fragmentation (if enabled for MP4/MOV videos)
      const isMP4Video = (fileItem.file.type === 'video/mp4' || fileItem.file.type === 'video/quicktime' || fileItem.file.name.toLowerCase().endsWith('.mp4') || fileItem.file.name.toLowerCase().endsWith('.mov'));
      
-     // Size limit: Skip fragmentation for files > 200MB to avoid WASM OOM
-     const MAX_FRAGMENTATION_SIZE = 200 * 1024 * 1024; // 200MB
-     const isFileTooLarge = isMP4Video && fileItem.file.size > MAX_FRAGMENTATION_SIZE;
-     
-     // Alert user about large video files
-     if (isFileTooLarge) {
-       const sizeMB = (fileItem.file.size / (1024 * 1024)).toFixed(1);
-       alert(`⚠️ Large video file detected (${sizeMB} MB)\n\nYour video is larger than 200 MB. Progressive streaming is disabled for this file.\n\nThe entire file will be downloaded before playback begins. This is necessary to avoid browser memory issues.\n\nConsider uploading smaller video files for a better experience.`);
-       console.warn(`[Upload] File ${fileItem.file.name} (${sizeMB} MB) exceeds 200MB limit. Fragmentation skipped.`);
-     }
-     
      // CRITICAL: Check browser support (SharedArrayBuffer) before attempting
-     const shouldFragment = isFragmentationActive && isMP4Video && isFragmentationSupported() && !isFileTooLarge;
+     const shouldFragment = isFragmentationActive && isMP4Video && isFragmentationSupported() && fileItem.file.size <= (200 * 1024 * 1024);
 
      console.log(`[Upload] Fragmentation decision for ${fileItem.file.name}:`, {
        shouldFragment,
        isFragmentationActive,
        isMP4Video,
-       isFileTooLarge,
        fileSize: fileItem.file.size,
        isSupported: isFragmentationSupported()
      });
@@ -616,6 +626,36 @@ const UploadForm = forwardRef(({ onFileUploaded, currentFolderId, externalFiles,
 
           // Combine with original extension
           setCustomFileName(nameWithoutExt + originalExt);
+        }}
+      />
+
+      <LargeVideoWarningModal
+        isOpen={showLargeVideoWarning}
+        fileName={largeVideoWarningFile?.file?.name || ''}
+        fileSizeMB={largeVideoWarningFile?.sizeMB || ''}
+        onContinue={() => {
+          // Add the file to queue after user confirms
+          if (largeVideoWarningFile) {
+            const fileItem = {
+              file: largeVideoWarningFile.file,
+              id: Math.random().toString(36).substr(2, 9),
+              status: 'pending',
+              progress: 0,
+              error: null,
+              folderId: largeVideoWarningFile.folderId,
+              progressStage: '',
+              startTime: null,
+              estimatedTimeRemaining: null,
+              isFragmenting: false,
+            };
+            setQueue(prev => [...prev, fileItem]);
+          }
+          setShowLargeVideoWarning(false);
+          setLargeVideoWarningFile(null);
+        }}
+        onCancel={() => {
+          setShowLargeVideoWarning(false);
+          setLargeVideoWarningFile(null);
         }}
       />
     </>
